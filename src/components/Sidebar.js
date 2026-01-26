@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FaUpload, FaFont, FaPalette, FaImage, FaMusic, FaLayerGroup, FaClock, FaCog, FaAlignLeft } from 'react-icons/fa';
+import { FaUpload, FaFont, FaPalette, FaImage, FaMusic, FaLayerGroup, FaClock, FaCog, FaAlignLeft, FaHeart } from 'react-icons/fa';
 import { saveAsset } from '../utils/db';
 
 const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings, setTimings, lyrics, duration, currentLineIndex, onClearTimings }) => {
@@ -51,7 +51,8 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
         { id: 'general', icon: <FaCog />, label: 'General' },
         { id: 'lyrics', icon: <FaAlignLeft />, label: 'Lyrics' },
         { id: 'layout', icon: <FaLayerGroup />, label: 'Layout' },
-        { id: 'timings', icon: <FaClock />, label: 'Timings' }
+        { id: 'timings', icon: <FaClock />, label: 'Timings' },
+        { id: 'donate', icon: <FaHeart style={{ color: '#ff4444' }} />, label: 'Donate' }
       ].map(tab => (
         <button
           key={tab.id}
@@ -422,6 +423,35 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
               );
             })}
           </div>
+        </div>
+      )}
+
+      {activeTab === 'donate' && (
+        <div className="panel-section" style={{ textAlign: 'center' }}>
+          <h3 className="panel-title">Support Project</h3>
+          <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '20px' }}>
+            If you find this tool helpful, consider supporting its development!
+          </p>
+          <div style={{
+            background: 'rgba(255,255,255,0.05)',
+            padding: '20px',
+            borderRadius: '16px',
+            display: 'inline-flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            border: '1px solid var(--border)',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.3)'
+          }}>
+            <img
+              src="/qr.jpg"
+              alt="Donate QR"
+              style={{ width: '280px', height: 'auto', borderRadius: '8px', display: 'block' }}
+              onError={(e) => { e.target.style.display = 'none'; alert('QR code not found in public folder.'); }}
+            />
+          </div>
+          <p style={{ marginTop: '20px', fontSize: '0.8rem', color: 'var(--primary-glow)' }}>
+            Scan to Donate ❤️
+          </p>
         </div>
       )}
 

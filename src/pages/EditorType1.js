@@ -30,11 +30,11 @@ const EditorType1 = () => {
     }, [resize, stopResizing]);
 
     // Default Configuration
-    const defaultLyrics = `con tim anh, thực sự mong manh\n\nvì ngoài em, không ai còn ở trong anh\n\nlần đầu gặp em, mưa trong một ngày trời trong xanh\n\nnhưng giờ đây, em đang không anh.\n\ngiá rét, trong những ngày đông lạnh\n\ntại vì sao? là vì em đang không cạnh\n\ntim của anh, em đâm đến mức không lành\n\nanh và em, chỉ dừng lại ở mức không thành.\n\nthằng chó đấy, bị người cũ đá, không đành.\n\nbiết ta là của nhau, nhưng mà không rành\n\ntán em, anh nghĩ là sẽ không thành\n\nnhưng em cho nó theo đuổi như đang không anh.\n\nchửi nó, những nó vẫn không chừa\n\nem bênh nó, lời anh nói không thừa\n\nbản mặt nó, trông nó vẫn ngông, đùa.\n\nanh đã, làm gì mà không vừa lòng em?`;
+    const defaultLyrics = `con tim anh, thực sự mong manh\n\nvì ngoài em, không ai còn ở trong anh\n\nlần đầu gặp em, mưa trong một ngày trời trong xanh\n\nnhưng giờ đây, em đang không anh.\n`;
 
     const defaultConfig = {
         songName: 'Lời của anh',
-        artistName: 'annc19324 ft. Suno A.I x Antigravity',
+        artistName: 'annc19324',
         channelName: '@annc19324',
         coverImage: '/background_main.png',
         mainImage: '/image_main.png',
@@ -434,7 +434,7 @@ const EditorType1 = () => {
             // 1. Capture Video Stream from Canvas
             // Lowering to 30 FPS provides much better stability for mobile/web encoding
             // and prevents the "1 second stutter" caused by 60FPS CPU spikes.
-            const canvasStream = canvasRef.current.captureStream(30); 
+            const canvasStream = canvasRef.current.captureStream(30);
             const videoTrack = canvasStream.getVideoTracks()[0];
 
             // 2. Capture Audio Stream (Persistent)
@@ -447,7 +447,7 @@ const EditorType1 = () => {
 
             // 3. Select Best MIME Type
             const types = [
-                "video/mp4; codecs=avc1.42E01E, mp4a.40.2", 
+                "video/mp4; codecs=avc1.42E01E, mp4a.40.2",
                 "video/mp4; codecs=avc1.4D401E, mp4a.40.2",
                 "video/mp4",
                 "video/webm; codecs=vp9",
@@ -468,7 +468,7 @@ const EditorType1 = () => {
                 mimeType,
                 videoBitsPerSecond: 4000000 // 4Mbps: Great for lyrics, avoids CPU lag
             };
-            
+
             try { options.videoKeyFrameIntervalDuration = 2000; } catch (e) { }
 
             const mediaRecorder = new MediaRecorder(combinedStream, options);
@@ -482,7 +482,7 @@ const EditorType1 = () => {
                     setIsExporting(false);
                     setIsPlaying(false);
                     mediaRecorderRef.current = null;
-                    return; 
+                    return;
                 }
 
                 const type = mimeType.split(';')[0];
@@ -494,9 +494,9 @@ const EditorType1 = () => {
 
                 const normalize = (str) => {
                     return str.toLowerCase()
-                        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") 
-                        .replace(/\s+/g, '') 
-                        .replace(/[^a-z0-9]/g, ''); 
+                        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+                        .replace(/\s+/g, '')
+                        .replace(/[^a-z0-9]/g, '');
                 };
                 const fileName = normalize(config.songName || 'video');
 
@@ -513,7 +513,7 @@ const EditorType1 = () => {
             if (audioContext) await audioContext.resume();
 
             mediaRecorder.start();
-            
+
             // Tiny 150ms Warmup: Long enough to let the recorder thread settle,
             // short enough to skip the "2 second extra duration" issue.
             setTimeout(() => {
@@ -535,7 +535,7 @@ const EditorType1 = () => {
                         if (mediaRecorder.state !== 'inactive') mediaRecorder.stop();
                     };
                 }
-            }, 150); 
+            }, 150);
 
         } catch (err) {
             console.error(err);
