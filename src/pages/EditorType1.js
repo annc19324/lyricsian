@@ -5,6 +5,37 @@ import Preview from '../components/Preview';
 import Timeline from '../components/Timeline';
 import { getAsset } from '../utils/db';
 
+// Default Configuration
+const defaultLyrics = `con tim anh, thực sự mong manh\n\nvì ngoài em, không ai còn ở trong anh\n\nlần đầu gặp em, mưa trong một ngày trời trong xanh\n\nnhưng giờ đây, em đang không anh.\n`;
+
+const defaultConfig = {
+    songName: 'Lời của anh',
+    artistName: 'annc19324',
+    channelName: '@annc19324',
+    coverImage: '/background_main.png',
+    mainImage: '/image_main.png',
+    audioUrl: process.env.PUBLIC_URL + '/sound.mp3',
+    fontFamily: 'Inter',
+    lyricSize: 32,
+    activeColor: '#ffffff',
+    highlightStyles: ['color'],
+    coverBlur: 40,
+    // Layout Config (User Default: YouTube)
+    width: 1920,
+    height: 1080,
+    imageScale: 0.5,
+    imageX: -187,
+    imageY: -22,
+    lyricsScale: 1,
+    lyricsX: -591,
+    lyricsY: -224,
+    lyricsAlign: 'left',
+    maxLinesAbove: 0,
+    maxLinesBelow: 8,
+    exportOverlayOpacity: 0,
+    exportOverlayBlur: 5
+};
+
 const EditorType1 = () => {
     const [sidebarWidth, setSidebarWidth] = useState(450);
     const [isResizing, setIsResizing] = useState(false);
@@ -28,37 +59,6 @@ const EditorType1 = () => {
             window.removeEventListener("mouseup", stopResizing);
         };
     }, [resize, stopResizing]);
-
-    // Default Configuration
-    const defaultLyrics = `con tim anh, thực sự mong manh\n\nvì ngoài em, không ai còn ở trong anh\n\nlần đầu gặp em, mưa trong một ngày trời trong xanh\n\nnhưng giờ đây, em đang không anh.\n`;
-
-    const defaultConfig = {
-        songName: 'Lời của anh',
-        artistName: 'annc19324',
-        channelName: '@annc19324',
-        coverImage: '/background_main.png',
-        mainImage: '/image_main.png',
-        audioUrl: process.env.PUBLIC_URL + '/sound.mp3',
-        fontFamily: 'Inter',
-        lyricSize: 32,
-        activeColor: '#ffffff',
-        highlightStyles: ['color'],
-        coverBlur: 40,
-        // Layout Config (User Default: YouTube)
-        width: 1920,
-        height: 1080,
-        imageScale: 0.5,
-        imageX: -187,
-        imageY: -22,
-        lyricsScale: 1,
-        lyricsX: -591,
-        lyricsY: -224,
-        lyricsAlign: 'left',
-        maxLinesAbove: 0,
-        maxLinesBelow: 8,
-        exportOverlayOpacity: 0,
-        exportOverlayBlur: 5
-    };
 
     // Load from LocalStorage or use Default
     const [config, setConfig] = useState(() => {

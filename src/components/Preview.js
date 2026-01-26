@@ -478,7 +478,7 @@ const Preview = ({ config, lyrics, currentLineIndex, canvasRef, audioRef, timing
         render();
 
         return () => cancelAnimationFrame(animationFrameId);
-    }, [config, lyrics, canvasRef, onLineClick]); // Dependencies
+    }, [config, lyrics, canvasRef, onLineClick, isPlaying, timings, audioRef]); // Dependencies
 
     return (
         <div className="preview-area" style={{
