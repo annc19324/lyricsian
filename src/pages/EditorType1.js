@@ -1,4 +1,5 @@
 
+/* global VideoEncoder, VideoFrame */
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import Sidebar from '../components/Sidebar';
 import Preview from '../components/Preview';
@@ -6,6 +7,7 @@ import Timeline from '../components/Timeline';
 import { getAsset } from '../utils/db';
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile, toBlobURL } from '@ffmpeg/util';
+import * as Mp4Muxer from 'mp4-muxer';
 
 // Default Configuration
 const defaultLyrics = `con tim anh, thực sự mong manh\n\nvì ngoài em, không ai còn ở trong anh\n\nlần đầu gặp em, mưa trong một ngày trời trong xanh\n\nnhưng giờ đây, em đang không anh.\n`;
@@ -454,9 +456,9 @@ const EditorType1 = () => {
             if (currentLineIndex < lyrics.length - 1) {
                 setCurrentLineIndex(prev => prev + 1);
             } else {
-                setIsRecording(false);
-                setIsPlaying(false);
-                if (audioRef.current) audioRef.current.pause();
+                // Last line: Keep recording/playing until end of song
+                // Do NOT stop.
+                console.log("Last line reached. Continuing to end.");
             }
         } else {
             // Navigation
@@ -483,8 +485,7 @@ const EditorType1 = () => {
             }
         }
     };
-
-    // Export functionality (OFFLINE RENDER)
+    // Export functionality (High-Performance WebCodecs + FFmpeg Mux)
     const handleExport = async () => {
         if (!config.audioUrl) return alert("No audio loaded.");
         if (!canvasRef.current) return alert("Canvas not ready.");
@@ -500,94 +501,126 @@ const EditorType1 = () => {
         try {
             setIsExporting(true);
             setIsExportMinimized(false);
-            setExportStatus("Loading assets...");
+            setExportStatus("Initializing High-Speed Export...");
             setEncodingProgress(0);
             skipEncodingRef.current = false;
             isExportCancelledRef.current = false;
 
-            const ffmpeg = ffmpegRef.current;
-
-            // 1. Prepare Audio
-            // We need to fetch the audio file to write to ffmpeg
-            // config.audioUrl might be a blob or remote url.
-            const audioData = await fetchFile(config.audioUrl);
-            await ffmpeg.writeFile('audio.wav', audioData);
-
-            // 2. Render Loop (Frame by Frame)
-            const fps = 30;
             const startTime = config.exportStart || 0;
             const endTime = config.exportEnd || duration;
             const totalDuration = endTime - startTime;
-
             if (totalDuration <= 0) throw new Error("Invalid duration");
 
+            const fps = 30; // Stable FPS
             const totalFrames = Math.floor(totalDuration * fps);
+            const { width, height } = config;
 
-            setExportStatus("Rendering frames...");
+            // 1. Setup MP4 Muxer & VideoEncoder (WebCodecs)
+            const muxer = new Mp4Muxer.Muxer({
+                target: new Mp4Muxer.ArrayBufferTarget(),
+                video: {
+                    codec: 'avc', // H.264
+                    width,
+                    height
+                },
+                fastStart: 'in-memory'
+            });
+
+            const videoEncoder = new VideoEncoder({
+                output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+                error: (e) => { throw e; }
+            });
+
+            videoEncoder.configure({
+                codec: 'avc1.4d002a', // Main Profile, Level 4.2 (Supports 1080p)
+                width,
+                height,
+                bitrate: 5_000_000, // 5 Mbps
+                framerate: fps
+            });
+
+            setExportStatus("Rendering & Encoding (Hardware Accel)...");
 
             const canvas = canvasRef.current;
 
+            // 2. Render Loop with direct Hardware Encoding
             for (let i = 0; i < totalFrames; i++) {
                 if (isExportCancelledRef.current) throw new Error("Cancelled");
 
                 const time = startTime + (i / fps);
 
-                // Drive Preview state
+                // Drive Preview state (Frame-perfect)
                 if (previewRef.current) {
                     previewRef.current.renderFrame(time);
                 }
 
-                // Update UI progress (fake "rendering" progress)
-                // We map 0-50% for Rendering, 50-100% for Encoding
+                // Update UI: 0-80% for rendering
                 setCurrentTime(time);
-                setEncodingProgress((i / totalFrames) * 50);
+                setEncodingProgress((i / totalFrames) * 80);
 
-                // Capture
-                // toBlob is async
-                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
-                const data = await fetchFile(blob);
-                // Name format frame_00000.jpg
-                const num = i.toString().padStart(5, '0');
-                await ffmpeg.writeFile(`frame_${num}.jpg`, data);
+                // Wait for canvas to be painted? 
+                // renderFrame is synchronous in drawing, but we need to ensure browser painted it?
+                // Actually createImageBitmap reads the backing store. It's usually safe.
 
-                // Minimal delay to let UI breathe
-                if (i % 15 === 0) await new Promise(r => setTimeout(r, 0));
+                const bitmap = await createImageBitmap(canvas);
+
+                // Timestamp in microseconds
+                const timestamp = i * (1_000_000 / fps);
+
+                const frame = new VideoFrame(bitmap, { timestamp: timestamp, duration: 1_000_000 / fps });
+
+                // Keyframe logic: every 1s (30 frames)
+                const keyFrame = (i % 30 === 0);
+
+                videoEncoder.encode(frame, { keyFrame });
+                frame.close(); // Important to prevent leak
+
+                // Throttle if encoder is busy
+                if (videoEncoder.encodeQueueSize > 5) {
+                    await videoEncoder.flush();
+                }
+
+                // Minimal yield
+                if (i % 30 === 0) await new Promise(r => setTimeout(r, 0));
             }
 
-            // 3. Encode
-            setExportStatus("Encoding video (FFmpeg)...");
+            await videoEncoder.flush();
+            muxer.finalize();
 
-            // Command from User:
-            // -framerate 30 -i frame_%05d.png -i audio.wav -c:v libx264 -g 30 -keyint_min 30 -sc_threshold 0 -profile:v baseline -pix_fmt yuv420p -c:a aac -ar 44100 -movflags +faststart output.mp4
+            const { buffer } = muxer.target;
+            // This is the silenced video file
+            const videoBlob = new Blob([buffer], { type: 'video/mp4' });
 
-            // We used jpg
+            // 3. Merge Audio using FFmpeg (Low CPU usage)
+            setExportStatus("Merging Audio...");
+            setEncodingProgress(90);
+
+            const ffmpeg = ffmpegRef.current;
+            await ffmpeg.writeFile('video_clean.mp4', await fetchFile(videoBlob));
+            await ffmpeg.writeFile('audio_source.wav', await fetchFile(config.audioUrl));
+
+            // Mux command: Copy video stream, Re-encode/Copy audio
+            // We use -ss and -t for audio trimming
             await ffmpeg.exec([
-                '-framerate', '30',
-                '-i', 'frame_%05d.jpg',
-                '-i', 'audio.wav',
-                '-ss', startTime.toString(), // seek audio start
-                '-t', totalDuration.toString(), // limit audio duration
-                '-c:v', 'libx264',
-                '-preset', 'ultrafast',
-                '-g', '30',
-                '-keyint_min', '30',
-                '-sc_threshold', '0',
-                '-profile:v', 'baseline',
-                '-level', '3.0',
-                '-pix_fmt', 'yuv420p',
-                '-c:a', 'aac',
-                '-ar', '44100',
-                '-movflags', '+faststart',
-                'output.mp4'
+                '-i', 'video_clean.mp4',
+                '-i', 'audio_source.wav',
+                '-ss', startTime.toString(),
+                '-t', totalDuration.toString(),
+                '-c:v', 'copy', // Zero re-encoding for video! Super fast!
+                '-c:a', 'aac',  // Good compatibility
+                '-b:a', '192k',
+                '-shortest',    // Stop when shortest stream ends
+                '-movflags', '+faststart', // Mobile ready
+                'final_output.mp4'
             ]);
 
             setEncodingProgress(100);
 
-            // 4. Download
-            const data = await ffmpeg.readFile('output.mp4');
+            const data = await ffmpeg.readFile('final_output.mp4');
             const finalBlob = new Blob([data.buffer], { type: 'video/mp4' });
-            const url = URL.createObjectURL(finalBlob);
 
+            // Download
+            const url = URL.createObjectURL(finalBlob);
             const normalize = (str) => {
                 return str.toLowerCase()
                     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -601,18 +634,11 @@ const EditorType1 = () => {
             a.download = `${fileName}.mp4`;
             a.click();
 
-            // Cleanup Frames
-            // We should loop and delete frame_*.jpg to free memory?
-            // In a real app yes. Here we rely on page refresh or just do it.
-            // ffmpeg.deleteFile... loop.
+            // Cleanup
             try {
-                // Quick cleanup of output
-                await ffmpeg.deleteFile('output.mp4');
-                await ffmpeg.deleteFile('audio.wav');
-                for (let i = 0; i < totalFrames; i++) {
-                    const num = i.toString().padStart(5, '0');
-                    await ffmpeg.deleteFile(`frame_${num}.jpg`);
-                }
+                await ffmpeg.deleteFile('video_clean.mp4');
+                await ffmpeg.deleteFile('audio_source.wav');
+                await ffmpeg.deleteFile('final_output.mp4');
             } catch (e) { }
 
             setIsExporting(false);
@@ -624,11 +650,11 @@ const EditorType1 = () => {
             }
             setIsExporting(false);
 
-            // Clean up potentially
+            // Try cleanup
             try {
                 const ffmpeg = ffmpegRef.current;
-                await ffmpeg.deleteFile('output.mp4');
-                await ffmpeg.deleteFile('audio.wav');
+                await ffmpeg.deleteFile('video_clean.mp4');
+                await ffmpeg.deleteFile('audio_source.wav');
             } catch (e) { }
         }
     };
@@ -837,6 +863,7 @@ const EditorType1 = () => {
                         console.log("Attempted URL:", config.audioUrl);
                         alert("Could not load audio from: " + config.audioUrl + "\nCheck if file exists in public folder.");
                     }}
+
                 />
             )}
         </div>
