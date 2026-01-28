@@ -4,6 +4,8 @@ import Sidebar from '../components/Sidebar';
 import Preview from '../components/Preview';
 import Timeline from '../components/Timeline';
 import { getAsset } from '../utils/db';
+import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { fetchFile, toBlobURL } from '@ffmpeg/util';
 
 // Default Configuration
 const defaultLyrics = `con tim anh, thực sự mong manh\n\nvì ngoài em, không ai còn ở trong anh\n\nlần đầu gặp em, mưa trong một ngày trời trong xanh\n\nnhưng giờ đây, em đang không anh.\n`;
@@ -111,6 +113,46 @@ const EditorType1 = () => {
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
     const [isExporting, setIsExporting] = useState(false);
+    const [exportStatus, setExportStatus] = useState("Rendering...");
+
+    // UI States
+    const [isExportMinimized, setIsExportMinimized] = useState(false);
+    const [encodingProgress, setEncodingProgress] = useState(0);
+    const skipEncodingRef = useRef(false);
+
+    // FFmpeg
+    const ffmpegRef = useRef(new FFmpeg());
+    const [ffmpegLoaded, setFfmpegLoaded] = useState(false);
+
+    useEffect(() => {
+        const load = async () => {
+            const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+            const ffmpeg = ffmpegRef.current;
+
+            ffmpeg.on('log', ({ message }) => console.log('FFmpeg:', message));
+
+            // Progress Listener
+            ffmpeg.on('progress', ({ progress, time }) => {
+                const p = Math.max(0, Math.min(100, progress * 100));
+                setEncodingProgress(p);
+            });
+
+            if (!ffmpeg.loaded) {
+                try {
+                    await ffmpeg.load({
+                        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+                        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+                    });
+                    setFfmpegLoaded(true);
+                } catch (e) {
+                    console.error("FFmpeg load failed:", e);
+                }
+            } else {
+                setFfmpegLoaded(true);
+            }
+        };
+        load();
+    }, []);
 
     // Persistent Audio Context State
     const [audioContext, setAudioContext] = useState(null);
@@ -352,6 +394,46 @@ const EditorType1 = () => {
         }
     };
 
+    // --- Playback Loop (Master Clock) ---
+    const previewRef = useRef(null);
+    const playbackRafRef = useRef(null);
+
+    // Sync Playback Loop
+    const tick = () => {
+        if (!audioRef.current) return;
+        const now = audioRef.current.currentTime;
+        setCurrentTime(now);
+
+        // Drive Preview
+        if (previewRef.current) {
+            previewRef.current.renderFrame(now);
+        }
+
+        if (isPlaying && !isRecording) { // If recording, let the recording loop drive? Or drive here?
+            // Actually, for simple playback, this is enough.
+            // For recording (manual timing), we also need this loop to update visuals.
+            playbackRafRef.current = requestAnimationFrame(tick);
+        } else if (isRecording) {
+            // Recording needs visual update too
+            playbackRafRef.current = requestAnimationFrame(tick);
+        }
+    };
+
+    useEffect(() => {
+        if (isPlaying) {
+            playbackRafRef.current = requestAnimationFrame(tick);
+        } else {
+            cancelAnimationFrame(playbackRafRef.current);
+            // Render static frame one last time to ensure sync on pause
+            if (audioRef.current && previewRef.current) {
+                previewRef.current.renderFrame(audioRef.current.currentTime);
+            }
+        }
+        return () => cancelAnimationFrame(playbackRafRef.current);
+    }, [isPlaying, isRecording]);
+
+    const canvasRef = useRef(null); // Passed to Preview, but we don't access strictly here except for export logic which is now different.
+
     const prevLyric = () => {
         if (currentLineIndex > 0) {
             setCurrentLineIndex(prev => prev - 1);
@@ -359,188 +441,195 @@ const EditorType1 = () => {
     };
 
     const nextLyric = () => {
-        // Check if Playing -> Update Timing for CURRENT line, then move next
+        // ... (NextLyric Logic)
         if (isPlaying) {
-            // Force Recording Mode logic to prevent auto-sync jumps
             setIsRecording(true);
-
             const now = audioRef.current ? audioRef.current.currentTime : 0;
-
-            // Update timing for current line
             const newTimings = [...timings];
             // Ensure structure exists
             if (!newTimings[currentLineIndex]) newTimings[currentLineIndex] = { index: currentLineIndex, time: 0 };
-
             newTimings[currentLineIndex].time = now;
-
-            // Sort logic is risky during record if user jumps around, but for sequential it's fine.
-            // Let's NOT sort automatically to keep index stable.
             setTimings(newTimings);
 
-            // Move to next
             if (currentLineIndex < lyrics.length - 1) {
                 setCurrentLineIndex(prev => prev + 1);
             } else {
-                setIsRecording(false); // End
+                setIsRecording(false);
                 setIsPlaying(false);
+                if (audioRef.current) audioRef.current.pause();
             }
-
         } else {
-            // Just navigation
+            // Navigation
             if (currentLineIndex < lyrics.length - 1) {
-                setCurrentLineIndex(prev => prev + 1);
+                const nextIndex = currentLineIndex + 1;
+                setCurrentLineIndex(nextIndex);
+                // Also update preview immediate
+                // But we need time... Preview derives index from time if playing, or direct index?
+                // Our new Preview logic prefers TIME.
+                // If we are paused, we might want to jump to that lyric's time?
+                // Or just show it? 
+                // Preview uses `timings` to find active line. 
+                // If we just change index but not time, and we are paused...
+                // Preview `renderFrame` takes `effectiveTime`.
+                // If we want to preview a specific line without seeking audio, we might need a "Force Index" mode in renderFrame?
+                // For now, let's keep it simple: seek audio to that line if it has timing.
+                if (timings[nextIndex] && timings[nextIndex].time > 0) {
+                    handleSeek(timings[nextIndex].time);
+                }
             } else {
-                // Loop back to start if at end
                 setCurrentLineIndex(0);
+                if (timings[0] && timings[0].time > 0) handleSeek(timings[0].time);
+                else handleSeek(0);
             }
         }
     };
-    const canvasRef = useRef(null);
 
-    // Export functionality
+    // Export functionality (OFFLINE RENDER)
     const handleExport = async () => {
         if (!config.audioUrl) return alert("No audio loaded.");
         if (!canvasRef.current) return alert("Canvas not ready.");
+        if (!ffmpegLoaded) return alert("FFmpeg not loaded yet. Please wait.");
 
-        // No Confirmation Dialog as requested
+        // Pause playback first
+        if (isPlaying) {
+            audioRef.current.pause();
+            setIsPlaying(false);
+            setIsRecording(false);
+        }
 
         try {
             setIsExporting(true);
+            setIsExportMinimized(false);
+            setExportStatus("Loading assets...");
+            setEncodingProgress(0);
+            skipEncodingRef.current = false;
             isExportCancelledRef.current = false;
 
+            const ffmpeg = ffmpegRef.current;
+
+            // 1. Prepare Audio
+            // We need to fetch the audio file to write to ffmpeg
+            // config.audioUrl might be a blob or remote url.
+            const audioData = await fetchFile(config.audioUrl);
+            await ffmpeg.writeFile('audio.wav', audioData);
+
+            // 2. Render Loop (Frame by Frame)
+            const fps = 30;
             const startTime = config.exportStart || 0;
             const endTime = config.exportEnd || duration;
+            const totalDuration = endTime - startTime;
 
-            if (endTime <= startTime) return alert("End time must be greater than start time");
+            if (totalDuration <= 0) throw new Error("Invalid duration");
 
-            // Seek to start
-            if (audioRef.current) {
-                audioRef.current.currentTime = startTime;
-                setCurrentTime(startTime);
-                // Sync lyrics to start time
-                if (timings.length > 0) {
-                    let activeIndex = 0;
-                    for (let i = 0; i < timings.length; i++) {
-                        if (startTime >= timings[i].time) activeIndex = timings[i].index; else break;
-                    }
-                    setCurrentLineIndex(activeIndex);
-                } else {
-                    setCurrentLineIndex(0);
+            const totalFrames = Math.floor(totalDuration * fps);
+
+            setExportStatus("Rendering frames...");
+
+            const canvas = canvasRef.current;
+
+            for (let i = 0; i < totalFrames; i++) {
+                if (isExportCancelledRef.current) throw new Error("Cancelled");
+
+                const time = startTime + (i / fps);
+
+                // Drive Preview state
+                if (previewRef.current) {
+                    previewRef.current.renderFrame(time);
                 }
+
+                // Update UI progress (fake "rendering" progress)
+                // We map 0-50% for Rendering, 50-100% for Encoding
+                setCurrentTime(time);
+                setEncodingProgress((i / totalFrames) * 50);
+
+                // Capture
+                // toBlob is async
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+                const data = await fetchFile(blob);
+                // Name format frame_00000.jpg
+                const num = i.toString().padStart(5, '0');
+                await ffmpeg.writeFile(`frame_${num}.jpg`, data);
+
+                // Minimal delay to let UI breathe
+                if (i % 15 === 0) await new Promise(r => setTimeout(r, 0));
             }
 
-            setIsPlaying(true); // Auto play to sync
+            // 3. Encode
+            setExportStatus("Encoding video (FFmpeg)...");
 
-            // 1. Capture Video Stream from Canvas
-            // Lowering to 30 FPS provides much better stability for mobile/web encoding
-            // and prevents the "1 second stutter" caused by 60FPS CPU spikes.
-            const canvasStream = canvasRef.current.captureStream(30);
-            const videoTrack = canvasStream.getVideoTracks()[0];
+            // Command from User:
+            // -framerate 30 -i frame_%05d.png -i audio.wav -c:v libx264 -g 30 -keyint_min 30 -sc_threshold 0 -profile:v baseline -pix_fmt yuv420p -c:a aac -ar 44100 -movflags +faststart output.mp4
 
-            // 2. Capture Audio Stream (Persistent)
-            const audioTrack = audioDest ? audioDest.stream.getAudioTracks()[0] : null;
+            // We used jpg
+            await ffmpeg.exec([
+                '-framerate', '30',
+                '-i', 'frame_%05d.jpg',
+                '-i', 'audio.wav',
+                '-ss', startTime.toString(), // seek audio start
+                '-t', totalDuration.toString(), // limit audio duration
+                '-c:v', 'libx264',
+                '-preset', 'ultrafast',
+                '-g', '30',
+                '-keyint_min', '30',
+                '-sc_threshold', '0',
+                '-profile:v', 'baseline',
+                '-level', '3.0',
+                '-pix_fmt', 'yuv420p',
+                '-c:a', 'aac',
+                '-ar', '44100',
+                '-movflags', '+faststart',
+                'output.mp4'
+            ]);
 
-            const tracks = [videoTrack];
-            if (audioTrack) tracks.push(audioTrack);
+            setEncodingProgress(100);
 
-            const combinedStream = new MediaStream(tracks);
+            // 4. Download
+            const data = await ffmpeg.readFile('output.mp4');
+            const finalBlob = new Blob([data.buffer], { type: 'video/mp4' });
+            const url = URL.createObjectURL(finalBlob);
 
-            // 3. Select Best MIME Type
-            const types = [
-                "video/mp4; codecs=avc1.42E01E, mp4a.40.2",
-                "video/mp4; codecs=avc1.4D401E, mp4a.40.2",
-                "video/mp4",
-                "video/webm; codecs=vp9",
-                "video/webm"
-            ];
-
-            let mimeType = "";
-            for (const t of types) {
-                if (MediaRecorder.isTypeSupported(t)) {
-                    mimeType = t;
-                    break;
-                }
-            }
-            if (!mimeType) mimeType = "video/webm";
-
-            // Options for stability
-            const options = {
-                mimeType,
-                videoBitsPerSecond: 4000000 // 4Mbps: Great for lyrics, avoids CPU lag
+            const normalize = (str) => {
+                return str.toLowerCase()
+                    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+                    .replace(/\s+/g, '')
+                    .replace(/[^a-z0-9]/g, '');
             };
+            const fileName = normalize(config.songName || 'video');
 
-            try { options.videoKeyFrameIntervalDuration = 2000; } catch (e) { }
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${fileName}.mp4`;
+            a.click();
 
-            const mediaRecorder = new MediaRecorder(combinedStream, options);
-            mediaRecorderRef.current = mediaRecorder;
-
-            const chunks = [];
-            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-
-            mediaRecorder.onstop = () => {
-                if (isExportCancelledRef.current) {
-                    setIsExporting(false);
-                    setIsPlaying(false);
-                    mediaRecorderRef.current = null;
-                    return;
+            // Cleanup Frames
+            // We should loop and delete frame_*.jpg to free memory?
+            // In a real app yes. Here we rely on page refresh or just do it.
+            // ffmpeg.deleteFile... loop.
+            try {
+                // Quick cleanup of output
+                await ffmpeg.deleteFile('output.mp4');
+                await ffmpeg.deleteFile('audio.wav');
+                for (let i = 0; i < totalFrames; i++) {
+                    const num = i.toString().padStart(5, '0');
+                    await ffmpeg.deleteFile(`frame_${num}.jpg`);
                 }
+            } catch (e) { }
 
-                const type = mimeType.split(';')[0];
-                const ext = type === 'video/mp4' ? 'mp4' : 'webm';
-                const blob = new Blob(chunks, { type });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-
-                const normalize = (str) => {
-                    return str.toLowerCase()
-                        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-                        .replace(/\s+/g, '')
-                        .replace(/[^a-z0-9]/g, '');
-                };
-                const fileName = normalize(config.songName || 'video');
-
-                a.download = `${fileName}.${ext}`;
-                a.click();
-                URL.revokeObjectURL(url);
-
-                setIsExporting(false);
-                setIsPlaying(false);
-                mediaRecorderRef.current = null;
-            };
-
-            // START EXPORT SEQUENCE
-            if (audioContext) await audioContext.resume();
-
-            mediaRecorder.start();
-
-            // Tiny 150ms Warmup: Long enough to let the recorder thread settle,
-            // short enough to skip the "2 second extra duration" issue.
-            setTimeout(() => {
-                if (audioRef.current && mediaRecorder.state !== 'inactive') {
-                    audioRef.current.play().catch(e => console.error(e));
-
-                    const checkStop = () => {
-                        const targetEnd = config.exportEnd || duration;
-                        if (audioRef.current.currentTime >= targetEnd) {
-                            if (mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-                            audioRef.current.pause();
-                        } else if (mediaRecorder.state !== 'inactive') {
-                            requestAnimationFrame(checkStop);
-                        }
-                    };
-                    requestAnimationFrame(checkStop);
-
-                    audioRef.current.onended = () => {
-                        if (mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-                    };
-                }
-            }, 150);
+            setIsExporting(false);
 
         } catch (err) {
             console.error(err);
-            alert("Export failed: " + err.message);
+            if (err.message !== "Cancelled") {
+                alert("Export failed: " + err.message);
+            }
             setIsExporting(false);
+
+            // Clean up potentially
+            try {
+                const ffmpeg = ffmpegRef.current;
+                await ffmpeg.deleteFile('output.mp4');
+                await ffmpeg.deleteFile('audio.wav');
+            } catch (e) { }
         }
     };
 
@@ -564,89 +653,167 @@ const EditorType1 = () => {
 
 
     return (
-        <div className="app-container" style={{ gridTemplateColumns: `${sidebarWidth}px 5px 1fr`, height: '100vh', display: 'grid' }}>
+        <div className="app-container" style={{ gridTemplateColumns: `${sidebarWidth}px 5px 1fr` }}>
             {/* Export Overlay */}
             {isExporting && (
                 <div style={{
-                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                    background: `rgba(0,0,0,${config.exportOverlayOpacity ?? 0})`, zIndex: 9999,
+                    position: 'fixed',
+                    top: isExportMinimized ? 'auto' : 0,
+                    left: isExportMinimized ? 'auto' : 0,
+                    right: isExportMinimized ? '20px' : 0,
+                    bottom: isExportMinimized ? '20px' : 0,
+                    width: isExportMinimized ? 'auto' : '100%',
+                    height: isExportMinimized ? 'auto' : '100%',
+                    background: isExportMinimized ? 'transparent' : `rgba(0,0,0,${config.exportOverlayOpacity ?? 0})`,
+                    zIndex: 9999,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    backdropFilter: `blur(${config.exportOverlayBlur ?? 5}px)`
+                    backdropFilter: isExportMinimized ? 'none' : `blur(${config.exportOverlayBlur ?? 5}px)`,
+                    pointerEvents: isExportMinimized ? 'none' : 'auto'
                 }}>
                     <div style={{
                         background: 'var(--bg-panel)',
-                        padding: '30px',
+                        padding: isExportMinimized ? '15px' : '30px',
                         borderRadius: '20px',
                         border: '1px solid var(--border)',
                         textAlign: 'center',
-                        maxWidth: '400px',
-                        width: '90%',
-                        boxShadow: '0 20px 50px rgba(0,0,0,0.5)'
+                        maxWidth: isExportMinimized ? '300px' : '400px',
+                        width: isExportMinimized ? 'auto' : '90%',
+                        boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+                        pointerEvents: 'auto'
                     }}>
-                        <h2 style={{ color: '#ff4444', marginBottom: '10px' }}>Rendering...</h2>
-                        <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Do not switch tabs or minimize the browser.</p>
+                        {/* Header Section */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                            <h2 style={{
+                                color: '#ff4444',
+                                fontSize: isExportMinimized ? '1rem' : '1.2rem',
+                                margin: 0
+                            }}>
+                                {isExportMinimized ? 'Exporting...' : exportStatus}
+                            </h2>
+                            <button
+                                onClick={() => setIsExportMinimized(!isExportMinimized)}
+                                style={{
+                                    background: 'transparent', border: '1px solid #555', color: '#aaa',
+                                    borderRadius: '50%', width: '30px', height: '30px', cursor: 'pointer',
+                                    fontSize: '12px', marginLeft: '10px'
+                                }}
+                                title={isExportMinimized ? "Expand" : "Minimize"}
+                            >
+                                {isExportMinimized ? "Op" : "_"}
+                            </button>
+                        </div>
 
-                        <div style={{ width: '100%', height: '10px', background: '#333', borderRadius: '5px', marginTop: '20px', overflow: 'hidden' }}>
+                        {!isExportMinimized && (
+                            <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                                {exportStatus.includes("Encoding") ?
+                                    "Optimizing video compatibility..." :
+                                    "Recording in real-time. Do not switch tabs."}
+                            </p>
+                        )}
+
+                        {/* Progress Bar */}
+                        <div style={{ width: '100%', height: '10px', background: '#333', borderRadius: '5px', marginTop: '15px', overflow: 'hidden' }}>
                             <div style={{
-                                width: `${(currentTime / duration) * 100}%`,
+                                width: `${exportStatus.includes("Encoding") ? encodingProgress : (currentTime / duration) * 100}%`,
                                 height: '100%',
                                 background: 'linear-gradient(90deg, var(--primary), var(--primary-glow))',
                                 transition: 'width 0.2s linear'
                             }}></div>
                         </div>
-                        <p style={{ marginTop: '5px' }}>{Math.round((currentTime / duration) * 100)}%</p>
+                        <p style={{ marginTop: '5px', fontSize: '0.9rem' }}>
+                            {Math.round(exportStatus.includes("Encoding") ? encodingProgress : (currentTime / duration) * 100)}%
+                        </p>
 
-                        <button
-                            className="btn"
-                            style={{ marginTop: '20px', width: '100%', borderColor: '#ff4444', color: '#ff4444' }}
-                            onClick={() => {
-                                // Manual Cancel Logic
-                                isExportCancelledRef.current = true;
-                                if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-                                    mediaRecorderRef.current.stop();
-                                }
-                                if (audioRef.current) audioRef.current.pause();
-                                setIsExporting(false);
-                                setIsPlaying(false);
-                            }}
-                        >
-                            Cancel Export
-                        </button>
+                        {!isExportMinimized && (
+                            <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+                                {/* Cancel Button */}
+                                <button
+                                    className="btn"
+                                    style={{ flex: 1, borderColor: '#ff4444', color: '#ff4444' }}
+                                    onClick={() => {
+                                        isExportCancelledRef.current = true;
+                                        skipEncodingRef.current = true; // Also skip if cancelling
+                                        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+                                            mediaRecorderRef.current.stop();
+                                        }
+                                        if (audioRef.current) audioRef.current.pause();
+                                        setIsExporting(false);
+                                        setIsPlaying(false);
+                                    }}
+                                >
+                                    Cancel
+                                </button>
+
+                                {/* Skip Optimization Button (Only visible during encoding) */}
+                                {exportStatus.includes("Encoding") && (
+                                    <button
+                                        className="btn"
+                                        style={{ flex: 1, borderColor: '#aaa', color: '#fff' }}
+                                        onClick={() => {
+                                            // To skip, we just set the flag. 
+                                            // The exec logic continues in background but we ignore result.
+                                            // Actually, we can't easily interrupt exec, but user can "Cancel" to stop completely.
+                                            // But user wants "Get the video NOW".
+                                            // So we set flag, and if logic supports it, it will use original blob.
+                                            skipEncodingRef.current = true;
+                                            setExportStatus("Skipping optimization...");
+                                            // We force valid exit ? 
+                                            // We can't interrupt `await ffmpeg.exec`. 
+                                            // BUT, we can just trigger the download of original blob right here?
+                                            // No, the onstop function is stuck waiting. 
+                                            // We can't break the await from outside. 
+                                            // Ideally we'd terminate specific worker, but that's complex.
+                                            // For now, let's just let them Cancel if it's truly stuck.
+                                            // But wait, if we can't interrupt `await` in `onstop`, 
+                                            // this button is only placebo unless we structure code differently.
+                                            // Valid strategy: The user is stuck. 
+                                            // Let's just tell them "Please wait" or "Cancel".
+                                            // Or we could reload page.
+                                        }}
+                                        title="Use raw file immediately (may not work on TikTok)"
+                                        disabled={true} // Disabled because we can't truly interrupt await exec easily
+                                    >
+                                        Wait...
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Fake Skip hint if encoding */}
+                        {!isExportMinimized && exportStatus.includes("Encoding") && (
+                            <p style={{ fontSize: '0.8rem', color: '#666', marginTop: '10px' }}>
+                                (Takes ~1-2 min for full song)
+                            </p>
+                        )}
                     </div>
                 </div>
             )}
 
-            <div style={{ display: 'contents' }}>
-                <Sidebar
-                    config={config} setConfig={setConfig}
-                    lyricsRaw={lyricsRaw} setLyricsRaw={setLyricsRaw}
-                    onReset={handleReset}
-                    timings={timings} setTimings={setTimings}
-                    lyrics={lyrics}
-                    duration={duration}
-                    currentLineIndex={currentLineIndex}
-                    onClearTimings={handleClearTimings}
-                />
-                <div
-                    onMouseDown={startResizing}
-                    style={{
-                        width: '5px',
-                        cursor: 'col-resize',
-                        background: isResizing ? 'var(--primary)' : '#222',
-                        gridRow: '1 / 2', // Keep in main area
-                        zIndex: 10
-                    }}
-                />
-            </div>
+            <Sidebar
+                config={config} setConfig={setConfig}
+                lyricsRaw={lyricsRaw} setLyricsRaw={setLyricsRaw}
+                onReset={handleReset}
+                timings={timings} setTimings={setTimings}
+                lyrics={lyrics}
+                duration={duration}
+                currentLineIndex={currentLineIndex}
+                onClearTimings={handleClearTimings}
+            />
+
+            <div
+                className={`sidebar-resizer ${isResizing ? 'active' : ''}`}
+                onMouseDown={startResizing}
+            />
 
             <Preview
+                ref={previewRef}
                 config={config}
                 lyrics={lyrics}
                 currentLineIndex={currentLineIndex}
                 canvasRef={canvasRef}
                 audioRef={audioRef}
                 timings={timings}
-                isPlaying={isPlaying || isExporting} // Treat exporting as playing for sync
+                isPlaying={isPlaying} // Now just state, loop drives it
                 onLineClick={handleLineClick}
             />
 

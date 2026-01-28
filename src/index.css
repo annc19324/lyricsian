@@ -59,3 +59,220 @@ input::-webkit-inner-spin-button {
 input[type=number] {
   -moz-appearance: textfield;
 }
+
+/* Main App Layout */
+.app-container {
+  display: grid;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  grid-template-areas:
+    "sidebar resizer preview"
+    "sidebar resizer timeline";
+  grid-template-columns: auto auto 1fr;
+  grid-template-rows: 1fr auto;
+}
+
+@media (max-width: 900px) {
+  body {
+    overflow: auto;
+    height: auto;
+  }
+
+  .app-container {
+    grid-template-areas:
+      "preview"
+      "timeline"
+      "sidebar";
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto auto 1fr !important;
+    overflow-y: auto !important;
+    height: auto !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  .sidebar-resizer {
+    display: none !important;
+  }
+}
+
+.btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.9rem;
+}
+
+.btn:hover {
+  border-color: var(--primary);
+  background: rgba(109, 40, 217, 0.1);
+}
+
+.btn.primary {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.btn.primary:hover {
+  background: var(--primary-glow);
+}
+
+.control-row {
+  margin-bottom: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.control-row label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.control-row input,
+.control-row select,
+.control-row textarea {
+  background: #121216;
+  border: 1px solid var(--border);
+  color: #fff;
+  padding: 10px;
+  border-radius: 8px;
+  outline: none;
+}
+
+.panel-section {
+  padding: 0 0 20px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+
+.panel-title {
+  font-size: 0.9rem;
+  margin-bottom: 15px;
+  color: var(--primary-glow);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* Sidebar Layout */
+.sidebar-container {
+  grid-area: sidebar;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 300px;
+}
+
+.sidebar-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.sidebar-resizer {
+  grid-area: resizer;
+  width: 5px;
+  background: #222;
+  cursor: col-resize;
+  transition: background 0.2s;
+  z-index: 10;
+}
+
+.sidebar-resizer:hover,
+.sidebar-resizer.active {
+  background: var(--primary);
+}
+
+/* Timeline Layout */
+.timeline-bar {
+  grid-area: timeline;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 10px 20px;
+  gap: 20px;
+  z-index: 100;
+}
+
+.progress-container {
+  flex: 1;
+  height: 8px;
+  background: #333;
+  border-radius: 4px;
+  position: relative;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.progress-container .marker {
+  height: 100%;
+}
+
+.progress-container .playhead {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background: var(--primary-glow);
+  box-shadow: 0 0 10px var(--primary-glow);
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Preview Area */
+.preview-area {
+  grid-area: preview;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+@media (max-width: 900px) {
+  .preview-area {
+    aspect-ratio: 16/9;
+    width: 100%;
+    height: auto;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+  }
+
+  .timeline-bar {
+    position: sticky;
+    top: 56.25vw;
+    /* Position right below sticky preview */
+    z-index: 999;
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 15px;
+  }
+
+  .controls {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .progress-container {
+    width: 100%;
+    order: -1;
+    margin-bottom: 10px;
+  }
+}
