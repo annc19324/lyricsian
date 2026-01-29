@@ -603,9 +603,11 @@ const EditorType1 = () => {
             // We use -ss and -t for audio trimming
             await ffmpeg.exec([
                 '-i', 'video_clean.mp4',
-                '-i', 'audio_source.wav',
                 '-ss', startTime.toString(),
                 '-t', totalDuration.toString(),
+                '-i', 'audio_source.wav',
+                '-map', '0:v',
+                '-map', '1:a',
                 '-c:v', 'copy', // Zero re-encoding for video! Super fast!
                 '-c:a', 'aac',  // Good compatibility
                 '-b:a', '192k',
