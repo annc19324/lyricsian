@@ -37,7 +37,18 @@ const defaultConfig = {
     maxLinesAbove: 0,
     maxLinesBelow: 8,
     exportOverlayOpacity: 0,
-    exportOverlayBlur: 5
+    exportOverlayBlur: 5,
+
+    // Metadata Defaults (Offsets from auto-position)
+    songX: 0, songY: 0, songSize: 40, songColor: '#ffffff',
+    artistX: 0, artistY: 0, artistSize: 30, artistColor: '#dddddd',
+    channelX: 0, channelY: 0, channelSize: 20, channelColor: '#aaaaaa',
+
+    // Audio Defaults
+    trimStart: 0,
+    trimEnd: 0,
+    fadeIn: 0,
+    fadeOut: 0
 };
 
 const EditorType1 = () => {
@@ -269,7 +280,10 @@ const EditorType1 = () => {
         }
     };
 
-    const handleSeek = (time) => {
+    const handleSeek = (uiTime) => {
+        const offset = config.trimStart || 0;
+        const time = uiTime + offset;
+
         if (audioRef.current) {
             audioRef.current.currentTime = time;
             setCurrentTime(time);
@@ -318,6 +332,28 @@ const EditorType1 = () => {
     const handleTimeUpdate = () => {
         if (audioRef.current) {
             const time = audioRef.current.currentTime;
+
+            // Trim / Loop Logic
+            const start = config.trimStart || 0;
+            const end = (config.trimEnd && config.trimEnd > 0) ? config.trimEnd : duration;
+
+            // Enforce Start Boundary
+            if (isPlaying && time < start) {
+                audioRef.current.currentTime = start;
+                setCurrentTime(start);
+                return;
+            }
+
+            // If we are playing and pass the end point
+            if (isPlaying && end > 0 && time >= end) {
+                audioRef.current.pause();
+                setIsPlaying(false);
+                setIsRecording(false);
+                audioRef.current.currentTime = start;
+                setCurrentTime(start);
+                return;
+            }
+
             setCurrentTime(time);
 
             // Auto-Replay Logic (if not recording and timings exist)
@@ -366,6 +402,16 @@ const EditorType1 = () => {
             setIsPlaying(false);
             setIsRecording(false);
         } else {
+            // Check Trim Bounds
+            const start = config.trimStart || 0;
+            const end = (config.trimEnd && config.trimEnd > 0) ? config.trimEnd : duration;
+            const now = audioRef.current.currentTime;
+
+            if (now < start || (end > 0 && now >= end - 0.1)) {
+                audioRef.current.currentTime = start;
+                setCurrentTime(start);
+            }
+
             try {
                 await audioRef.current.play();
                 setIsPlaying(true);
@@ -506,10 +552,15 @@ const EditorType1 = () => {
             skipEncodingRef.current = false;
             isExportCancelledRef.current = false;
 
-            const startTime = config.exportStart || 0;
-            const endTime = config.exportEnd || duration;
+            // Audio Trim Logic
+            const startTime = config.trimStart || 0;
+            // If trimEnd is 0 or undefined, use full duration.
+            // But better to use `duration` state if available.
+            const fullDuration = duration || 300;
+            const endTime = (config.trimEnd && config.trimEnd > 0) ? config.trimEnd : fullDuration;
+
             const totalDuration = endTime - startTime;
-            if (totalDuration <= 0) throw new Error("Invalid duration");
+            if (totalDuration <= 0) throw new Error("Invalid duration (End < Start)");
 
             const fps = 30; // Stable FPS
             const totalFrames = Math.floor(totalDuration * fps);
@@ -558,10 +609,6 @@ const EditorType1 = () => {
                 setCurrentTime(time);
                 setEncodingProgress((i / totalFrames) * 80);
 
-                // Wait for canvas to be painted? 
-                // renderFrame is synchronous in drawing, but we need to ensure browser painted it?
-                // Actually createImageBitmap reads the backing store. It's usually safe.
-
                 const bitmap = await createImageBitmap(canvas);
 
                 // Timestamp in microseconds
@@ -569,18 +616,15 @@ const EditorType1 = () => {
 
                 const frame = new VideoFrame(bitmap, { timestamp: timestamp, duration: 1_000_000 / fps });
 
-                // Keyframe logic: every 1s (30 frames)
                 const keyFrame = (i % 30 === 0);
 
                 videoEncoder.encode(frame, { keyFrame });
-                frame.close(); // Important to prevent leak
+                frame.close();
 
-                // Throttle if encoder is busy
                 if (videoEncoder.encodeQueueSize > 5) {
                     await videoEncoder.flush();
                 }
 
-                // Minimal yield
                 if (i % 30 === 0) await new Promise(r => setTimeout(r, 0));
             }
 
@@ -588,33 +632,44 @@ const EditorType1 = () => {
             muxer.finalize();
 
             const { buffer } = muxer.target;
-            // This is the silenced video file
             const videoBlob = new Blob([buffer], { type: 'video/mp4' });
 
-            // 3. Merge Audio using FFmpeg (Low CPU usage)
-            setExportStatus("Merging Audio...");
+            // 3. Merge Audio using FFmpeg
+            setExportStatus("Merging Audio & Applying Fades...");
             setEncodingProgress(90);
 
             const ffmpeg = ffmpegRef.current;
             await ffmpeg.writeFile('video_clean.mp4', await fetchFile(videoBlob));
             await ffmpeg.writeFile('audio_source.wav', await fetchFile(config.audioUrl));
 
-            // Mux command: Copy video stream, Re-encode/Copy audio
-            // We use -ss and -t for audio trimming
-            await ffmpeg.exec([
+            const fadeIn = config.fadeIn || 0;
+            const fadeOut = config.fadeOut || 0;
+
+            const filters = [];
+            if (fadeIn > 0) filters.push(`afade=t=in:st=0:d=${fadeIn}`);
+            if (fadeOut > 0) filters.push(`afade=t=out:st=${totalDuration - fadeOut}:d=${fadeOut}`);
+
+            const ffmpegArgs = [
                 '-i', 'video_clean.mp4',
                 '-ss', startTime.toString(),
                 '-t', totalDuration.toString(),
                 '-i', 'audio_source.wav',
                 '-map', '0:v',
                 '-map', '1:a',
-                '-c:v', 'copy', // Zero re-encoding for video! Super fast!
-                '-c:a', 'aac',  // Good compatibility
+                '-c:v', 'copy',
+                '-c:a', 'aac',
                 '-b:a', '192k',
-                '-shortest',    // Stop when shortest stream ends
-                '-movflags', '+faststart', // Mobile ready
-                'final_output.mp4'
-            ]);
+                '-shortest',
+                '-movflags', '+faststart'
+            ];
+
+            if (filters.length > 0) {
+                ffmpegArgs.push('-af', filters.join(','));
+            }
+
+            ffmpegArgs.push('final_output.mp4');
+
+            await ffmpeg.exec(ffmpegArgs);
 
             setEncodingProgress(100);
 
@@ -846,7 +901,9 @@ const EditorType1 = () => {
             />
 
             <Timeline
-                currentTime={currentTime} duration={duration} isPlaying={isPlaying}
+                currentTime={Math.max(0, currentTime - (config.trimStart || 0))}
+                duration={Math.max(0, ((config.trimEnd && config.trimEnd > 0) ? config.trimEnd : duration) - (config.trimStart || 0))}
+                isPlaying={isPlaying}
                 onPlayPause={togglePlay} onSeek={handleSeek}
                 onNextLyric={nextLyric} onPrevLyric={prevLyric}
                 onExport={handleExport} isRecording={isRecording} onRecordToggle={toggleRecording}

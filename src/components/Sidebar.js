@@ -5,6 +5,19 @@ import { saveAsset } from '../utils/db';
 const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings, setTimings, lyrics, duration, currentLineIndex, onClearTimings }) => {
   const [activeTab, setActiveTab] = useState('general'); // general, lyrics, layout, timings
 
+  // Collapse State
+  const [collapsed, setCollapsed] = useState({
+    meta: true,
+    presets: true,
+    mainImage: true,
+    lyricsPos: true,
+    assets: true,
+    audio: true,
+    export: true
+  });
+
+  const toggleCollapse = (key) => setCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
+
   const handleFileChange = async (e, key) => {
     const file = e.target.files[0];
     if (file) {
@@ -20,9 +33,6 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
   // Timings Update Logic
   const handleTimingChange = (index, value) => {
     const newTimings = [...timings];
-    // Find index in timings matching lyric index? Or assumes array match?
-    // With recent changes, timings array matches lyrics array length/order.
-    // But let's be safe.
     if (newTimings[index]) {
       newTimings[index] = { ...newTimings[index], time: value };
       setTimings(newTimings);
@@ -39,7 +49,6 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
     if (activeTab === 'timings') {
       const activeEl = document.getElementById(`timing-row-${currentLineIndex}`);
       if (activeEl) {
-        // Scroll with 'center' alignment ensures context above and below is visible
         activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }
@@ -48,11 +57,11 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
   const renderTabs = () => (
     <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '15px' }}>
       {[
-        { id: 'general', icon: <FaCog />, label: 'General' },
-        { id: 'lyrics', icon: <FaAlignLeft />, label: 'Lyrics' },
-        { id: 'layout', icon: <FaLayerGroup />, label: 'Layout' },
-        { id: 'timings', icon: <FaClock />, label: 'Timings' },
-        { id: 'donate', icon: <FaHeart style={{ color: '#ff4444' }} />, label: 'Donate' }
+        { id: 'general', icon: <FaCog />, label: 'Chung' },
+        { id: 'lyrics', icon: <FaAlignLeft />, label: 'Lời bài hát' },
+        { id: 'layout', icon: <FaLayerGroup />, label: 'Bố cục' },
+        { id: 'timings', icon: <FaClock />, label: 'Thời gian' },
+        { id: 'donate', icon: <FaHeart style={{ color: '#ff4444' }} />, label: 'Ủng hộ' }
       ].map(tab => (
         <button
           key={tab.id}
@@ -71,127 +80,206 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
     </div>
   );
 
+  // Helper for Section Header
+  const SectionHeader = ({ title, id }) => (
+    <div
+      onClick={() => toggleCollapse(id)}
+      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', cursor: 'pointer', userSelect: 'none' }}
+    >
+      <h4 style={{ fontSize: '0.8rem', color: '#fff', margin: 0, borderLeft: '3px solid var(--primary)', paddingLeft: '8px' }}>{title}</h4>
+      <span style={{ color: 'var(--text-muted)', fontSize: '1rem' }}>{collapsed[id] ? '+' : '-'}</span>
+    </div>
+  );
+
   return (
     <div className="sidebar-container">
       {renderTabs()}
 
-      <div className="sidebar-content">
+      <div className="sidebar-content" style={{ paddingBottom: '150px' }}>
 
         {activeTab === 'general' && (
           <>
             <div className="panel-section">
-              <h3 className="panel-title">Metadata</h3>
+              <h3 className="panel-title">Thông tin bài hát</h3>
               <input
                 type="text"
-                placeholder="Song Name"
+                placeholder="Tên bài hát"
                 value={config.songName}
                 onChange={(e) => setConfig({ ...config, songName: e.target.value })}
               />
               <input
                 type="text"
-                placeholder="Artist Name"
+                placeholder="Tên ca sĩ"
                 value={config.artistName}
                 onChange={(e) => setConfig({ ...config, artistName: e.target.value })}
               />
               <input
                 type="text"
-                placeholder="Channel / Credit"
+                placeholder="Kênh / Nguồn / Credit"
                 value={config.channelName}
                 onChange={(e) => setConfig({ ...config, channelName: e.target.value })}
               />
             </div>
 
             <div className="panel-section">
-              <h3 className="panel-title">Assets</h3>
+              <SectionHeader title="Tài nguyên (Assets)" id="assets" />
 
-              <div className="file-input-group">
-                <label className="btn">
-                  <FaImage /> Cover Image (Bg)
-                  <input type="file" hidden accept="image/*" onChange={(e) => handleFileChange(e, 'coverImage')} />
-                </label>
-              </div>
-              <div className="control-row">
-                <label>Blur Bg ({config.coverBlur}px)</label>
-                <input
-                  type="range" min="0" max="100"
-                  value={config.coverBlur ?? 40}
-                  onChange={(e) => setConfig({ ...config, coverBlur: parseInt(e.target.value) })}
-                />
-              </div>
+              {!collapsed.assets && (
+                <>
+                  <div className="file-input-group">
+                    <label className="btn">
+                      <FaImage /> Ảnh nền (Background)
+                      <input type="file" hidden accept="image/*" onChange={(e) => handleFileChange(e, 'coverImage')} />
+                    </label>
+                  </div>
+                  <div className="control-row">
+                    <label>Độ mờ nền ({config.coverBlur}px)</label>
+                    <input
+                      type="range" min="0" max="100"
+                      value={config.coverBlur ?? 40}
+                      onChange={(e) => setConfig({ ...config, coverBlur: parseInt(e.target.value) })}
+                    />
+                  </div>
 
-              <div className="file-input-group">
-                <label className="btn">
-                  <FaImage /> Main Image (Left)
-                  <input type="file" hidden accept="image/*" onChange={(e) => handleFileChange(e, 'mainImage')} />
-                </label>
-              </div>
+                  <div className="file-input-group">
+                    <label className="btn">
+                      <FaImage /> Ảnh chính (Trái/Giữa)
+                      <input type="file" hidden accept="image/*" onChange={(e) => handleFileChange(e, 'mainImage')} />
+                    </label>
+                  </div>
 
-              <div className="file-input-group">
-                <label className="btn primary">
-                  <FaMusic /> Audio File
-                  <input type="file" hidden accept="audio/*, video/*" onChange={(e) => handleFileChange(e, 'audioUrl')} />
-                </label>
-              </div>
+                  <div className="file-input-group">
+                    <label className="btn primary">
+                      <FaMusic /> File Âm thanh
+                      <input type="file" hidden accept="audio/*, video/*" onChange={(e) => handleFileChange(e, 'audioUrl')} />
+                    </label>
+                  </div>
+                </>
+              )}
+
+              {/* Audio Settings nested or separate? Let's separate */}
             </div>
+
             <div className="panel-section">
-              <div style={{ marginTop: '20px', borderTop: '1px solid var(--border)', paddingTop: '20px' }}>
-                <h4 style={{ fontSize: '0.8rem', marginBottom: '10px', color: '#fff' }}>Export Range (sec)</h4>
-                <div className="control-row" style={{ flexDirection: 'row' }}>
-                  <input
-                    type="number" step="0.1"
-                    value={config.exportStart || 0}
-                    onChange={e => setConfig({ ...config, exportStart: parseFloat(e.target.value) })}
-                    placeholder="Start"
-                    style={{ width: '50%' }}
-                  />
-                  <input
-                    type="number" step="0.1"
-                    value={config.exportEnd || duration || 0}
-                    onChange={e => setConfig({ ...config, exportEnd: parseFloat(e.target.value) })}
-                    placeholder="End"
-                    style={{ width: '50%' }}
-                  />
-                </div>
-              </div>
+              <SectionHeader title="Cài đặt Âm thanh" id="audio" />
+              {!collapsed.audio && (
+                <>
+                  <div className="control-row">
+                    <label style={{ color: 'var(--text-muted)' }}>Cắt & Làm mờ (Giây)</label>
+                    <div style={{ display: 'flex', gap: '5px', width: '100%', marginTop: '5px' }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '0.65rem' }}>Bắt đầu</label>
+                        <input
+                          type="number" step="0.1"
+                          value={config.trimStart}
+                          onChange={(e) => setConfig({ ...config, trimStart: e.target.value === '' ? '' : parseFloat(e.target.value) })}
+                          style={{ width: '100%' }}
+                        />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '0.65rem' }}>Kết thúc</label>
+                        <input
+                          type="number" step="0.1"
+                          value={config.trimEnd}
+                          onChange={(e) => setConfig({ ...config, trimEnd: e.target.value === '' ? '' : parseFloat(e.target.value) })}
+                          placeholder="Auto"
+                          style={{ width: '100%' }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="control-row">
+                    <div style={{ display: 'flex', gap: '5px', width: '100%' }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '0.65rem' }}>Fade In (Vào)</label>
+                        <input
+                          type="number" step="0.5"
+                          value={config.fadeIn}
+                          onChange={(e) => setConfig({ ...config, fadeIn: e.target.value === '' ? '' : parseFloat(e.target.value) })}
+                          style={{ width: '100%' }}
+                        />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '0.65rem' }}>Fade Out (Ra)</label>
+                        <input
+                          type="number" step="0.5"
+                          value={config.fadeOut}
+                          onChange={(e) => setConfig({ ...config, fadeOut: e.target.value === '' ? '' : parseFloat(e.target.value) })}
+                          style={{ width: '100%' }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
 
-              <div className="control-row">
-                <label>Export Overlay Opacity ({config.exportOverlayOpacity ?? 0})</label>
-                <input
-                  type="range" min="0" max="1" step="0.1"
-                  value={config.exportOverlayOpacity ?? 0}
-                  onChange={(e) => setConfig({ ...config, exportOverlayOpacity: parseFloat(e.target.value) })}
-                />
-              </div>
+            <div className="panel-section">
+              <SectionHeader title="Xuất Video" id="export" />
+              {!collapsed.export && (
+                <>
+                  <div className="control-row" style={{ flexDirection: 'row' }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: '0.7rem' }}>Bắt đầu (s)</label>
+                      <input
+                        type="number" step="0.1"
+                        value={config.exportStart ?? ''}
+                        onChange={e => setConfig({ ...config, exportStart: e.target.value === '' ? '' : parseFloat(e.target.value) })}
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                    <div style={{ flex: 1, marginLeft: '5px' }}>
+                      <label style={{ fontSize: '0.7rem' }}>Kết thúc (s)</label>
+                      <input
+                        type="number" step="0.1"
+                        value={config.exportEnd ?? ''}
+                        placeholder={duration ? duration.toFixed(1) : "Auto"}
+                        onChange={e => setConfig({ ...config, exportEnd: e.target.value === '' ? '' : parseFloat(e.target.value) })}
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                  </div>
 
-              <div className="control-row">
-                <label>Export Overlay Blur ({config.exportOverlayBlur ?? 5}px)</label>
-                <input
-                  type="range" min="0" max="20" step="1"
-                  value={config.exportOverlayBlur ?? 5}
-                  onChange={(e) => setConfig({ ...config, exportOverlayBlur: parseInt(e.target.value) })}
-                />
-              </div>
-              <button className="btn" onClick={onReset} style={{ marginTop: '20px', width: '100%', justifyContent: 'center', color: '#ff4444', borderColor: '#ff4444' }}>
-                Reset to Default
-              </button>
+                  <div className="control-row">
+                    <label>Độ mờ lớp phủ ({config.exportOverlayOpacity ?? 0})</label>
+                    <input
+                      type="range" min="0" max="1" step="0.1"
+                      value={config.exportOverlayOpacity ?? 0}
+                      onChange={(e) => setConfig({ ...config, exportOverlayOpacity: parseFloat(e.target.value) })}
+                    />
+                  </div>
+
+                  <div className="control-row">
+                    <label>Độ nhòe lớp phủ ({config.exportOverlayBlur ?? 5}px)</label>
+                    <input
+                      type="range" min="0" max="20" step="1"
+                      value={config.exportOverlayBlur ?? 5}
+                      onChange={(e) => setConfig({ ...config, exportOverlayBlur: parseInt(e.target.value) })}
+                    />
+                  </div>
+                  <button className="btn" onClick={onReset} style={{ marginTop: '20px', width: '100%', justifyContent: 'center', color: '#ff4444', borderColor: '#ff4444' }}>
+                    Khôi phục mặc định
+                  </button>
+                </>
+              )}
             </div>
           </>
         )}
 
         {activeTab === 'lyrics' && (
           <div className="panel-section">
-            <h3 className="panel-title">Lyrics Content</h3>
+            <h3 className="panel-title">Nội dung Lời bài hát</h3>
             <textarea
               style={{ minHeight: '300px' }}
-              placeholder="Paste lyrics here. Empty lines separate paragraphs/groups."
+              placeholder="Dán lời bài hát vào đây. Dùng dòng trống để tách khổ."
               value={lyricsRaw}
               onChange={(e) => setLyricsRaw(e.target.value)}
             />
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Note: Use empty lines to separate verses. Single lines will be treated as consecutive lines.
+              Lưu ý: Dùng dòng trống để tách khổ. Một dòng đơn sẽ được coi là câu liên tiếp.
             </div>
             <div className="control-row" style={{ marginTop: '20px' }}>
-              <label>Font</label>
+              <label>Phông chữ</label>
               <select
                 value={config.fontFamily}
                 onChange={(e) => setConfig({ ...config, fontFamily: e.target.value })}
@@ -201,7 +289,7 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
               </select>
             </div>
             <div className="control-row">
-              <label>Align</label>
+              <label>Canh lề</label>
               <div style={{ display: 'flex', gap: '5px' }}>
                 {['left', 'center', 'right'].map(align => (
                   <button
@@ -216,7 +304,7 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
               </div>
             </div>
             <div className="control-row">
-              <label>Active Color</label>
+              <label>Màu chữ đang hát</label>
               <input
                 type="color"
                 value={config.activeColor}
@@ -225,7 +313,7 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
               />
             </div>
             <div className="control-row">
-              <label>Highlight Styles</label>
+              <label>Hiệu ứng nổi bật</label>
               <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
                 {['color', 'karaoke', 'scale', 'glow', 'box'].map(style => {
                   const activeStyles = config.highlightStyles || [];
@@ -245,7 +333,7 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
                         setConfig({ ...config, highlightStyles: newStyles });
                       }}
                     >
-                      {style.toUpperCase()}
+                      {{ color: 'Màu', karaoke: 'Karaoke', scale: 'Phóng to', glow: 'Phát sáng', box: 'Khung' }[style]}
                     </button>
                   );
                 })}
@@ -254,7 +342,7 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
 
             {(config.highlightStyles || []).includes('karaoke') && (
               <div className="control-row">
-                <label>Karaoke Speed ({config.karaokeSpeed || 1.0}x)</label>
+                <label>Tốc độ Karaoke ({config.karaokeSpeed || 1.0}x)</label>
                 <input
                   type="range" min="0.5" max="3.0" step="0.1"
                   value={config.karaokeSpeed || 1.0}
@@ -267,129 +355,190 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
 
         {activeTab === 'layout' && (
           <div className="panel-section">
-            <h3 className="panel-title">Layout & Style</h3>
+            <h3 className="panel-title">Bố cục & Giao diện</h3>
 
             {/* Export Ratio */}
             <div style={{ marginBottom: '15px', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
-              <h4 style={{ fontSize: '0.8rem', marginBottom: '10px', color: '#fff' }}>Export Presets</h4>
-              <div style={{ display: 'flex', gap: '5px' }}>
-                <button
-                  className={`btn ${config.width === 1920 && config.height === 1080 ? 'primary' : ''}`}
-                  onClick={() => setConfig({
-                    ...config,
-                    width: 1920, height: 1080,
-                    imageScale: 0.5, imageX: -187, imageY: -22,
-                    lyricSize: 32, lyricsX: -591, lyricsY: -224,
-                    maxLinesAbove: 0, maxLinesBelow: 8,
-                    lyricsAlign: 'left'
-                  })}
-                  style={{ fontSize: '0.7rem', flex: 1, padding: '5px' }}
-                >
-                  16:9 (YT)
-                </button>
-                <button
-                  className={`btn ${config.width === 1080 && config.height === 1920 ? 'primary' : ''}`}
-                  onClick={() => setConfig({
-                    ...config,
-                    width: 1080, height: 1920,
-                    imageScale: 0.5, imageX: 0, imageY: -75,
-                    lyricSize: 32, lyricsX: 3, lyricsY: -521,
-                    maxLinesAbove: 0, maxLinesBelow: 8,
-                    lyricsAlign: 'center'
-                  })}
-                  style={{ fontSize: '0.7rem', flex: 1, padding: '5px' }}
-                >
-                  9:16 (TikTok)
-                </button>
-
-              </div>
+              <SectionHeader title="Mẫu Xuất Video" id="presets" />
+              {!collapsed.presets && (
+                <div style={{ display: 'flex', gap: '5px' }}>
+                  <button
+                    className={`btn ${config.width === 1920 && config.height === 1080 ? 'primary' : ''}`}
+                    onClick={() => setConfig({
+                      ...config,
+                      width: 1920, height: 1080,
+                      imageScale: 0.5, imageX: -187, imageY: -22,
+                      lyricSize: 32, lyricsX: -591, lyricsY: -224,
+                      maxLinesAbove: 0, maxLinesBelow: 8,
+                      lyricsAlign: 'left'
+                    })}
+                    style={{ fontSize: '0.7rem', flex: 1, padding: '5px' }}
+                  >
+                    16:9 (Youtube)
+                  </button>
+                  <button
+                    className={`btn ${config.width === 1080 && config.height === 1920 ? 'primary' : ''}`}
+                    onClick={() => setConfig({
+                      ...config,
+                      width: 1080, height: 1920,
+                      imageScale: 0.5, imageX: 0, imageY: -75,
+                      lyricSize: 32, lyricsX: 3, lyricsY: -521,
+                      maxLinesAbove: 0, maxLinesBelow: 8,
+                      lyricsAlign: 'center'
+                    })}
+                    style={{ fontSize: '0.7rem', flex: 1, padding: '5px' }}
+                  >
+                    9:16 (TikTok)
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Main Image Controls */}
             <div style={{ marginBottom: '15px', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
-              <h4 style={{ fontSize: '0.8rem', marginBottom: '10px', color: '#fff' }}>Main Image</h4>
-              <div className="control-row">
-                <label>Scale ({config.imageScale}x)</label>
-                <input
-                  type="range" min="0.1" max="1" step="0.01"
-                  value={config.imageScale}
-                  onChange={(e) => setConfig({ ...config, imageScale: parseFloat(e.target.value) })}
-                />
-              </div>
-              <div className="control-row">
-                <label>Pos X ({config.imageX}px)</label>
-                <input
-                  type="range" min="-1000" max="1000"
-                  value={config.imageX}
-                  onChange={(e) => setConfig({ ...config, imageX: parseInt(e.target.value) })}
-                />
-              </div>
-              <div className="control-row">
-                <label>Pos Y ({config.imageY}px)</label>
-                <input
-                  type="range" min="-1000" max="1000"
-                  value={config.imageY}
-                  onChange={(e) => setConfig({ ...config, imageY: parseInt(e.target.value) })}
-                />
-              </div>
+              <SectionHeader title="Ảnh Chính" id="mainImage" />
+              {!collapsed.mainImage && (
+                <>
+                  <div className="control-row">
+                    <label>Tỷ lệ ({config.imageScale}x)</label>
+                    <input
+                      type="range" min="0.1" max="1" step="0.01"
+                      value={config.imageScale}
+                      onChange={(e) => setConfig({ ...config, imageScale: parseFloat(e.target.value) })}
+                    />
+                  </div>
+                  <div className="control-row">
+                    <label>Vị trí X ({config.imageX}px)</label>
+                    <input
+                      type="range" min="-1000" max="1000"
+                      value={config.imageX}
+                      onChange={(e) => setConfig({ ...config, imageX: parseInt(e.target.value) })}
+                    />
+                  </div>
+                  <div className="control-row">
+                    <label>Vị trí Y ({config.imageY}px)</label>
+                    <input
+                      type="range" min="-1000" max="1000"
+                      value={config.imageY}
+                      onChange={(e) => setConfig({ ...config, imageY: parseInt(e.target.value) })}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Metadata Styling */}
+            <div style={{ marginBottom: '15px', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
+              <SectionHeader title="Tùy chỉnh Thông tin Bài hát" id="meta" />
+
+              {!collapsed.meta && ['song', 'artist', 'channel'].map(type => {
+                const labelMap = { song: 'Tên Bài Hát', artist: 'Tên Ca Sĩ', channel: 'Tên Kênh' };
+                return (
+                  <div key={type} style={{ marginBottom: '15px', background: 'rgba(255,255,255,0.03)', padding: '10px', borderRadius: '8px' }}>
+                    <h5 style={{ margin: '0 0 10px 0', fontSize: '0.8rem', color: 'var(--primary-glow)' }}>{labelMap[type]}</h5>
+
+                    <div className="control-row">
+                      <label>Dịch chuyển X ({config[`${type}X`]}px)</label>
+                      <input
+                        type="range" min="-500" max="500"
+                        value={config[`${type}X`] ?? 0}
+                        onChange={(e) => setConfig({ ...config, [`${type}X`]: parseInt(e.target.value) })}
+                      />
+                    </div>
+                    <div className="control-row">
+                      <label>Dịch chuyển Y ({config[`${type}Y`]}px)</label>
+                      <input
+                        type="range" min="-500" max="500"
+                        value={config[`${type}Y`] ?? 0}
+                        onChange={(e) => setConfig({ ...config, [`${type}Y`]: parseInt(e.target.value) })}
+                      />
+                    </div>
+
+                    <div className="control-row" style={{ flexDirection: 'row', gap: '5px' }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ display: 'block', marginBottom: '2px' }}>Cỡ chữ</label>
+                        <input
+                          type="number"
+                          value={config[`${type}Size`] ?? (type === 'song' ? 40 : type === 'artist' ? 30 : 20)}
+                          onChange={(e) => setConfig({ ...config, [`${type}Size`]: parseInt(e.target.value) })}
+                          style={{ width: '95%' }}
+                        />
+                      </div>
+                      <div style={{ flex: 0.5 }}>
+                        <label style={{ display: 'block', marginBottom: '2px' }}>Màu sắc</label>
+                        <input
+                          type="color"
+                          value={config[`${type}Color`] ?? (type === 'channel' ? '#aaaaaa' : (type === 'artist' ? '#dddddd' : '#ffffff'))}
+                          onChange={(e) => setConfig({ ...config, [`${type}Color`]: e.target.value })}
+                          style={{ width: '100%', height: '30px', padding: 0, border: 'none' }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             {/* Lyrics Controls */}
             <div style={{ marginBottom: '15px' }}>
-              <h4 style={{ fontSize: '0.8rem', marginBottom: '10px', color: '#fff' }}>Lyrics Position</h4>
-              <div className="control-row">
-                <label>Size ({config.lyricSize}px)</label>
-                <input
-                  type="range" min="10" max="300"
-                  value={config.lyricSize}
-                  onChange={(e) => setConfig({ ...config, lyricSize: parseInt(e.target.value) })}
-                />
-              </div>
-              <div className="control-row">
-                <label>Pos X ({config.lyricsX}px)</label>
-                <input
-                  type="range" min="-1000" max="1000"
-                  value={config.lyricsX}
-                  onChange={(e) => setConfig({ ...config, lyricsX: parseInt(e.target.value) })}
-                />
-              </div>
-              <div className="control-row">
-                <label>Pos Y ({config.lyricsY}px)</label>
-                <input
-                  type="range" min="-1000" max="1000"
-                  value={config.lyricsY}
-                  onChange={(e) => setConfig({ ...config, lyricsY: parseInt(e.target.value) })}
-                />
-              </div>
+              <SectionHeader title="Vị trí Lời bài hát" id="lyricsPos" />
+              {!collapsed.lyricsPos && (
+                <>
+                  <div className="control-row">
+                    <label>Cỡ chữ ({config.lyricSize}px)</label>
+                    <input
+                      type="range" min="10" max="300"
+                      value={config.lyricSize}
+                      onChange={(e) => setConfig({ ...config, lyricSize: parseInt(e.target.value) })}
+                    />
+                  </div>
+                  <div className="control-row">
+                    <label>Vị trí X ({config.lyricsX}px)</label>
+                    <input
+                      type="range" min="-1000" max="1000"
+                      value={config.lyricsX}
+                      onChange={(e) => setConfig({ ...config, lyricsX: parseInt(e.target.value) })}
+                    />
+                  </div>
+                  <div className="control-row">
+                    <label>Vị trí Y ({config.lyricsY}px)</label>
+                    <input
+                      type="range" min="-1000" max="1000"
+                      value={config.lyricsY}
+                      onChange={(e) => setConfig({ ...config, lyricsY: parseInt(e.target.value) })}
+                    />
+                  </div>
 
-              <div className="control-row" style={{ flexDirection: 'row', gap: '10px' }}>
-                <div style={{ flex: 1 }}>
-                  <label>Lines Above</label>
-                  <input
-                    type="number" min="0" max="10"
-                    value={config.maxLinesAbove ?? 2}
-                    onChange={e => setConfig({ ...config, maxLinesAbove: parseInt(e.target.value) })}
-                  />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label>Lines Below</label>
-                  <input
-                    type="number" min="0" max="10"
-                    value={config.maxLinesBelow ?? 2}
-                    onChange={e => setConfig({ ...config, maxLinesBelow: parseInt(e.target.value) })}
-                  />
-                </div>
-              </div>
+                  <div className="control-row" style={{ flexDirection: 'row', gap: '10px' }}>
+                    <div style={{ flex: 1 }}>
+                      <label>Dòng Trên</label>
+                      <input
+                        type="number" min="0" max="10"
+                        value={config.maxLinesAbove ?? 2}
+                        onChange={e => setConfig({ ...config, maxLinesAbove: parseInt(e.target.value) })}
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label>Dòng Dưới</label>
+                      <input
+                        type="number" min="0" max="10"
+                        value={config.maxLinesBelow ?? 2}
+                        onChange={e => setConfig({ ...config, maxLinesBelow: parseInt(e.target.value) })}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
 
         {activeTab === 'timings' && (
           <div className="panel-section">
-            <h3 className="panel-title">Timing Editor</h3>
+            <h3 className="panel-title">Chỉnh sửa Thời gian</h3>
             <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
-              <button className="btn" onClick={sortTimings} style={{ fontSize: '0.7rem', flex: 1 }}>Sort Timings</button>
-              <button className="btn danger" onClick={onClearTimings} style={{ fontSize: '0.7rem', flex: 1 }}>Reset All (0s)</button>
+              <button className="btn" onClick={sortTimings} style={{ fontSize: '0.7rem', flex: 1 }}>Sắp xếp</button>
+              <button className="btn danger" onClick={onClearTimings} style={{ fontSize: '0.7rem', flex: 1 }}>Xóa tất cả (0s)</button>
             </div>
 
             <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '5px', maxHeight: 'calc(100vh - 200px)' }}>
@@ -430,9 +579,9 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
 
         {activeTab === 'donate' && (
           <div className="panel-section" style={{ textAlign: 'center' }}>
-            <h3 className="panel-title">Support Project</h3>
+            <h3 className="panel-title">Ủng hộ Dự án</h3>
             <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '20px' }}>
-              If you find this tool helpful, consider supporting its development!
+              Nếu bạn thấy công cụ này hữu ích, hãy cân nhắc ủng hộ để phát triển thêm!
             </p>
             <div style={{
               background: 'rgba(255,255,255,0.05)',
@@ -452,7 +601,7 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
               />
             </div>
             <p style={{ marginTop: '20px', fontSize: '0.8rem', color: 'var(--primary-glow)' }}>
-              Scan to Donate ❤️
+              Quét mã để Donate ❤️
             </p>
           </div>
         )}

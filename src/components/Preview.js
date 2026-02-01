@@ -197,24 +197,32 @@ const Preview = forwardRef(({ config, lyrics, currentLineIndex, canvasRef, audio
             // Draw Song Info Text
             ctx.save();
             ctx.textAlign = isVertical ? 'center' : 'left';
-            ctx.fillStyle = 'white';
+
             const textX = isVertical ? drawX : (drawX - w / 2);
-            let textY = isVertical ? (drawY + h / 2 + 40) : (drawY + h / 2 + 50);
+            let baseTextY = isVertical ? (drawY + h / 2 + 40) : (drawY + h / 2 + 50);
+
+            // Song
             ctx.shadowColor = 'rgba(0,0,0,0.8)';
             ctx.shadowBlur = 4;
             ctx.shadowOffsetX = 2;
             ctx.shadowOffsetY = 2;
-            ctx.font = `bold 40px ${fontFamily} `;
-            ctx.fillText(config.songName || '', textX, textY);
-            textY += 45;
-            ctx.font = `30px ${fontFamily} `;
-            ctx.fillStyle = '#ddd';
-            ctx.fillText(config.artistName || '', textX, textY);
-            textY += 35;
+
+            ctx.font = `bold ${config.songSize || 40}px ${fontFamily} `;
+            ctx.fillStyle = config.songColor || 'white';
+            ctx.fillText(config.songName || '', textX + (config.songX || 0), baseTextY + (config.songY || 0));
+
+            // Artist
+            const artistBaseY = baseTextY + 45;
+            ctx.font = `${config.artistSize || 30}px ${fontFamily} `;
+            ctx.fillStyle = config.artistColor || '#ddd';
+            ctx.fillText(config.artistName || '', textX + (config.artistX || 0), artistBaseY + (config.artistY || 0));
+
+            // Channel
+            const channelBaseY = artistBaseY + 35;
             if (config.channelName) {
-                ctx.font = `italic 20px ${fontFamily} `;
-                ctx.fillStyle = 'rgba(255,255,255,0.6)';
-                ctx.fillText(config.channelName, textX, textY);
+                ctx.font = `italic ${config.channelSize || 20}px ${fontFamily} `;
+                ctx.fillStyle = config.channelColor || 'rgba(255,255,255,0.6)';
+                ctx.fillText(config.channelName, textX + (config.channelX || 0), channelBaseY + (config.channelY || 0));
             }
             ctx.restore();
         }
@@ -390,11 +398,11 @@ const Preview = forwardRef(({ config, lyrics, currentLineIndex, canvasRef, audio
         ctx.restore();
     };
 
-    // Initial render
+    // Update render on config change (removing debounce for smooth slider preview)
     useEffect(() => {
-        // Render initial frame (time 0) when assets load or config changes
-        const t = setTimeout(() => render(0), 100);
-        return () => clearTimeout(t);
+        const time = (audioRef && audioRef.current) ? audioRef.current.currentTime : 0;
+        const id = requestAnimationFrame(() => render(time));
+        return () => cancelAnimationFrame(id);
     }, [config, lyrics, positionsRef.current]);
     // ^ simplified deps. Essentially whenever layout calc changes, we re-render frame 0 (or current?)
     // Actually we should render current... but stateless...
