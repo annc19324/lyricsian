@@ -1,11 +1,12 @@
 
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 
-const Preview = forwardRef(({ config, lyrics, currentLineIndex, canvasRef, audioRef, timings, isPlaying, onLineClick }, ref) => {
+const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canvasRef, audioRef, timings, isPlaying, onLineClick }, ref) => {
     // Hidden image elements for loading assets
     const coverImgRef = useRef(null);
     const mainImgRef = useRef(null);
     const positionsRef = useRef([]); // Store layout for click detection
+    const offscreenCanvasRef = useRef(document.createElement('canvas')); // Reusable offscreen canvas
 
     // Animation State
     const scrollYRef = useRef(0); // Current pixel offset for smooth scrolling
@@ -490,20 +491,28 @@ const Preview = forwardRef(({ config, lyrics, currentLineIndex, canvasRef, audio
             const waterY = height * (config.waterLevel || 0.7);
             const waterH = height - waterY;
 
-            const offC = document.createElement('canvas');
-            offC.width = width;
-            offC.height = height;
-            const offCtx = offC.getContext('2d');
+            let offC = offscreenCanvasRef.current;
+            if (offC.width !== width || offC.height !== height) {
+                offC.width = width;
+                offC.height = height;
+            }
+            const offCtx = offC.getContext('2d', { alpha: false });
+            
+            // Clear offscreen because we reuse it
+            offCtx.clearRect(0, 0, width, height);
 
             // Draw reflection flipped
+            offCtx.save();
             offCtx.translate(0, 2 * waterY);
             offCtx.scale(1, -1);
             drawScene(offCtx, true);
+            offCtx.restore();
 
             ctx.save();
             ctx.beginPath();
             ctx.rect(0, waterY, width, height - waterY);
             ctx.clip();
+
 
             // -- Cinematic Water Rendering (Scanline + Distortion) --
             const waveBaseSpeed = config.waveSpeed || 1;
@@ -755,6 +764,6 @@ const Preview = forwardRef(({ config, lyrics, currentLineIndex, canvasRef, audio
             <img ref={mainImgRef} src={config.mainImage} alt="asset-main" style={{ display: 'none' }} />
         </div>
     );
-});
+}));
 
 export default Preview;

@@ -365,7 +365,10 @@ const EditorType1 = () => {
                 return;
             }
 
-            setCurrentTime(time);
+            // setCurrentTime(time); // Removed to prevent re-renders in playback
+
+            // Sync Timeline visually here too (important for scrubbing when paused)
+            if (timelineRef.current) timelineRef.current.updateTime(Math.max(0, time - (config.trimStart || 0)));
 
             // Auto-Replay Logic (if not recording and timings exist)
             if (!isRecording && timings.length > 0) {
@@ -455,25 +458,26 @@ const EditorType1 = () => {
 
     // --- Playback Loop (Master Clock) ---
     const previewRef = useRef(null);
+    const timelineRef = useRef(null);
     const playbackRafRef = useRef(null);
 
     // Sync Playback Loop
     const tick = () => {
         if (!audioRef.current) return;
         const now = audioRef.current.currentTime;
-        setCurrentTime(now);
+        // setCurrentTime(now); // Removed to prevent re-renders
 
         // Drive Preview
         if (previewRef.current) {
             previewRef.current.renderFrame(now);
         }
 
-        if (isPlaying && !isRecording) { // If recording, let the recording loop drive? Or drive here?
-            // Actually, for simple playback, this is enough.
-            // For recording (manual timing), we also need this loop to update visuals.
-            playbackRafRef.current = requestAnimationFrame(tick);
-        } else if (isRecording) {
-            // Recording needs visual update too
+        // Drive Timeline
+        if (timelineRef.current) {
+            timelineRef.current.updateTime(Math.max(0, now - (config.trimStart || 0)));
+        }
+
+        if (isPlaying || isRecording) {
             playbackRafRef.current = requestAnimationFrame(tick);
         }
     };
@@ -912,7 +916,7 @@ const EditorType1 = () => {
             />
 
             <Timeline
-                currentTime={Math.max(0, currentTime - (config.trimStart || 0))}
+                ref={timelineRef}
                 duration={Math.max(0, ((config.trimEnd && config.trimEnd > 0) ? config.trimEnd : duration) - (config.trimStart || 0))}
                 isPlaying={isPlaying}
                 onPlayPause={togglePlay} onSeek={handleSeek}

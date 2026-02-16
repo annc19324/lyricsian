@@ -13,7 +13,7 @@ const SectionHeader = ({ title, isCollapsed, onToggle }) => (
   </div>
 );
 
-const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings, setTimings, lyrics, duration, currentLineIndex, onClearTimings }) => {
+const Sidebar = React.memo(({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings, setTimings, lyrics, duration, currentLineIndex, onClearTimings }) => {
   const [activeTab, setActiveTab] = useState('general'); // general, lyrics, layout, timings
 
   // Collapse State
@@ -820,6 +820,6 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
     </div>
 
   );
-};
+});
 
 export default Sidebar;
