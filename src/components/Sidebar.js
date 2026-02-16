@@ -1,6 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { FaUpload, FaFont, FaPalette, FaImage, FaMusic, FaLayerGroup, FaClock, FaCog, FaAlignLeft, FaHeart } from 'react-icons/fa';
+import { FaUpload, FaFont, FaPalette, FaImage, FaMusic, FaLayerGroup, FaClock, FaCog, FaAlignLeft, FaHeart, FaMagic } from 'react-icons/fa';
 import { saveAsset } from '../utils/db';
+
+// Helper for Section Header (Moved outside to prevent re-renders)
+const SectionHeader = ({ title, isCollapsed, onToggle }) => (
+  <div
+    onClick={onToggle}
+    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', cursor: 'pointer', userSelect: 'none' }}
+  >
+    <h4 style={{ fontSize: '0.8rem', color: '#fff', margin: 0, borderLeft: '3px solid var(--primary)', paddingLeft: '8px' }}>{title}</h4>
+    <span style={{ color: 'var(--text-muted)', fontSize: '1rem' }}>{isCollapsed ? '+' : '-'}</span>
+  </div>
+);
 
 const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings, setTimings, lyrics, duration, currentLineIndex, onClearTimings }) => {
   const [activeTab, setActiveTab] = useState('general'); // general, lyrics, layout, timings
@@ -60,6 +71,7 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
         { id: 'general', icon: <FaCog />, label: 'Chung' },
         { id: 'lyrics', icon: <FaAlignLeft />, label: 'Lời bài hát' },
         { id: 'layout', icon: <FaLayerGroup />, label: 'Bố cục' },
+        { id: 'effects', icon: <FaMagic />, label: 'Hiệu ứng' },
         { id: 'timings', icon: <FaClock />, label: 'Thời gian' },
         { id: 'donate', icon: <FaHeart style={{ color: '#ff4444' }} />, label: 'Ủng hộ' }
       ].map(tab => (
@@ -77,17 +89,6 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
           {tab.label}
         </button>
       ))}
-    </div>
-  );
-
-  // Helper for Section Header
-  const SectionHeader = ({ title, id }) => (
-    <div
-      onClick={() => toggleCollapse(id)}
-      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', cursor: 'pointer', userSelect: 'none' }}
-    >
-      <h4 style={{ fontSize: '0.8rem', color: '#fff', margin: 0, borderLeft: '3px solid var(--primary)', paddingLeft: '8px' }}>{title}</h4>
-      <span style={{ color: 'var(--text-muted)', fontSize: '1rem' }}>{collapsed[id] ? '+' : '-'}</span>
     </div>
   );
 
@@ -122,7 +123,11 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
             </div>
 
             <div className="panel-section">
-              <SectionHeader title="Tài nguyên (Assets)" id="assets" />
+              <SectionHeader
+                title="Tài nguyên (Assets)"
+                isCollapsed={collapsed.assets}
+                onToggle={() => toggleCollapse('assets')}
+              />
 
               {!collapsed.assets && (
                 <>
@@ -161,7 +166,11 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
             </div>
 
             <div className="panel-section">
-              <SectionHeader title="Cài đặt Âm thanh" id="audio" />
+              <SectionHeader
+                title="Cài đặt Âm thanh"
+                isCollapsed={collapsed.audio}
+                onToggle={() => toggleCollapse('audio')}
+              />
               {!collapsed.audio && (
                 <>
                   <div className="control-row">
@@ -215,7 +224,11 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
             </div>
 
             <div className="panel-section">
-              <SectionHeader title="Xuất Video" id="export" />
+              <SectionHeader
+                title="Xuất Video"
+                isCollapsed={collapsed.export}
+                onToggle={() => toggleCollapse('export')}
+              />
               {!collapsed.export && (
                 <>
                   <div className="control-row" style={{ flexDirection: 'row' }}>
@@ -303,6 +316,8 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
                 ))}
               </div>
             </div>
+
+
             <div className="control-row">
               <label>Màu chữ đang hát</label>
               <input
@@ -340,6 +355,50 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
               </div>
             </div>
 
+            <div className="control-row" style={{ marginTop: '15px', borderTop: '1px solid #333', paddingTop: '10px' }}>
+              <label style={{ color: 'var(--primary-glow)', marginBottom: '10px', display: 'block' }}>Tùy chỉnh Chi tiết</label>
+
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: '0.7rem' }}>Độ nhòe (Glow)</label>
+                  <input
+                    type="range" min="0" max="100"
+                    value={config.lyricsGlowSize}
+                    onChange={(e) => setConfig({ ...config, lyricsGlowSize: parseInt(e.target.value) })}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+                <div style={{ width: '50px' }}>
+                  <input type="number" value={config.lyricsGlowSize} onChange={e => setConfig({ ...config, lyricsGlowSize: parseInt(e.target.value) })} style={{ width: '100%', marginTop: '18px' }} />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: '0.7rem' }}>Viền chữ (Stroke)</label>
+                  <input
+                    type="range" min="0" max="20" step="0.5"
+                    value={config.lyricsBorderWidth}
+                    onChange={(e) => setConfig({ ...config, lyricsBorderWidth: parseFloat(e.target.value) })}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+                <div style={{ width: '50px' }}>
+                  <input type="number" value={config.lyricsBorderWidth} onChange={e => setConfig({ ...config, lyricsBorderWidth: parseFloat(e.target.value) })} style={{ width: '100%', marginTop: '18px' }} />
+                </div>
+              </div>
+
+              <div className="control-row">
+                <label>Màu viền</label>
+                <input
+                  type="color"
+                  value={config.lyricsBorderColor || '#000000'}
+                  onChange={(e) => setConfig({ ...config, lyricsBorderColor: e.target.value })}
+                  style={{ width: '100%', height: '30px', cursor: 'pointer', border: 'none', background: 'none' }}
+                />
+              </div>
+            </div>
+
             {(config.highlightStyles || []).includes('karaoke') && (
               <div className="control-row">
                 <label>Tốc độ Karaoke ({config.karaokeSpeed || 1.0}x)</label>
@@ -359,7 +418,11 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
 
             {/* Export Ratio */}
             <div style={{ marginBottom: '15px', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
-              <SectionHeader title="Mẫu Xuất Video" id="presets" />
+              <SectionHeader
+                title="Mẫu Xuất Video"
+                isCollapsed={collapsed.presets}
+                onToggle={() => toggleCollapse('presets')}
+              />
               {!collapsed.presets && (
                 <div style={{ display: 'flex', gap: '5px' }}>
                   <button
@@ -396,7 +459,11 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
 
             {/* Main Image Controls */}
             <div style={{ marginBottom: '15px', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
-              <SectionHeader title="Ảnh Chính" id="mainImage" />
+              <SectionHeader
+                title="Ảnh Chính & Hiệu ứng"
+                isCollapsed={collapsed.mainImage}
+                onToggle={() => toggleCollapse('mainImage')}
+              />
               {!collapsed.mainImage && (
                 <>
                   <div className="control-row">
@@ -408,28 +475,52 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
                     />
                   </div>
                   <div className="control-row">
-                    <label>Vị trí X ({config.imageX}px)</label>
-                    <input
-                      type="range" min="-1000" max="1000"
-                      value={config.imageX}
-                      onChange={(e) => setConfig({ ...config, imageX: parseInt(e.target.value) })}
-                    />
+                    <label>Vị trí X</label>
+                    <div style={{ display: 'flex', gap: '5px' }}>
+                      <input
+                        type="range" min="-5000" max="5000"
+                        value={config.imageX}
+                        onChange={(e) => setConfig({ ...config, imageX: parseInt(e.target.value) })}
+                        style={{ flex: 1 }}
+                      />
+                      <input
+                        type="number"
+                        value={config.imageX}
+                        onChange={(e) => setConfig({ ...config, imageX: parseInt(e.target.value) })}
+                        style={{ width: '70px', background: '#111', border: '1px solid #333', color: '#fff', textAlign: 'center' }}
+                      />
+                    </div>
                   </div>
                   <div className="control-row">
-                    <label>Vị trí Y ({config.imageY}px)</label>
-                    <input
-                      type="range" min="-1000" max="1000"
-                      value={config.imageY}
-                      onChange={(e) => setConfig({ ...config, imageY: parseInt(e.target.value) })}
-                    />
+                    <label>Vị trí Y</label>
+                    <div style={{ display: 'flex', gap: '5px' }}>
+                      <input
+                        type="range" min="-5000" max="5000"
+                        value={config.imageY}
+                        onChange={(e) => setConfig({ ...config, imageY: parseInt(e.target.value) })}
+                        style={{ flex: 1 }}
+                      />
+                      <input
+                        type="number"
+                        value={config.imageY}
+                        onChange={(e) => setConfig({ ...config, imageY: parseInt(e.target.value) })}
+                        style={{ width: '70px', background: '#111', border: '1px solid #333', color: '#fff', textAlign: 'center' }}
+                      />
+                    </div>
                   </div>
+
+
                 </>
               )}
             </div>
 
             {/* Metadata Styling */}
             <div style={{ marginBottom: '15px', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
-              <SectionHeader title="Tùy chỉnh Thông tin Bài hát" id="meta" />
+              <SectionHeader
+                title="Tùy chỉnh Thông tin Bài hát"
+                isCollapsed={collapsed.meta}
+                onToggle={() => toggleCollapse('meta')}
+              />
 
               {!collapsed.meta && ['song', 'artist', 'channel'].map(type => {
                 const labelMap = { song: 'Tên Bài Hát', artist: 'Tên Ca Sĩ', channel: 'Tên Kênh' };
@@ -440,7 +531,7 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
                     <div className="control-row">
                       <label>Dịch chuyển X ({config[`${type}X`]}px)</label>
                       <input
-                        type="range" min="-500" max="500"
+                        type="range" min="-5000" max="5000"
                         value={config[`${type}X`] ?? 0}
                         onChange={(e) => setConfig({ ...config, [`${type}X`]: parseInt(e.target.value) })}
                       />
@@ -448,7 +539,7 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
                     <div className="control-row">
                       <label>Dịch chuyển Y ({config[`${type}Y`]}px)</label>
                       <input
-                        type="range" min="-500" max="500"
+                        type="range" min="-5000" max="5000"
                         value={config[`${type}Y`] ?? 0}
                         onChange={(e) => setConfig({ ...config, [`${type}Y`]: parseInt(e.target.value) })}
                       />
@@ -481,7 +572,11 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
 
             {/* Lyrics Controls */}
             <div style={{ marginBottom: '15px' }}>
-              <SectionHeader title="Vị trí Lời bài hát" id="lyricsPos" />
+              <SectionHeader
+                title="Vị trí Lời bài hát"
+                isCollapsed={collapsed.lyricsPos}
+                onToggle={() => toggleCollapse('lyricsPos')}
+              />
               {!collapsed.lyricsPos && (
                 <>
                   <div className="control-row">
@@ -493,20 +588,38 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
                     />
                   </div>
                   <div className="control-row">
-                    <label>Vị trí X ({config.lyricsX}px)</label>
-                    <input
-                      type="range" min="-1000" max="1000"
-                      value={config.lyricsX}
-                      onChange={(e) => setConfig({ ...config, lyricsX: parseInt(e.target.value) })}
-                    />
+                    <label>Vị trí X</label>
+                    <div style={{ display: 'flex', gap: '5px' }}>
+                      <input
+                        type="range" min="-5000" max="5000"
+                        value={config.lyricsX}
+                        onChange={(e) => setConfig({ ...config, lyricsX: parseInt(e.target.value) })}
+                        style={{ flex: 1 }}
+                      />
+                      <input
+                        type="number"
+                        value={config.lyricsX}
+                        onChange={(e) => setConfig({ ...config, lyricsX: parseInt(e.target.value) })}
+                        style={{ width: '70px', background: '#111', border: '1px solid #333', color: '#fff', textAlign: 'center' }}
+                      />
+                    </div>
                   </div>
                   <div className="control-row">
-                    <label>Vị trí Y ({config.lyricsY}px)</label>
-                    <input
-                      type="range" min="-1000" max="1000"
-                      value={config.lyricsY}
-                      onChange={(e) => setConfig({ ...config, lyricsY: parseInt(e.target.value) })}
-                    />
+                    <label>Vị trí Y</label>
+                    <div style={{ display: 'flex', gap: '5px' }}>
+                      <input
+                        type="range" min="-5000" max="5000"
+                        value={config.lyricsY}
+                        onChange={(e) => setConfig({ ...config, lyricsY: parseInt(e.target.value) })}
+                        style={{ flex: 1 }}
+                      />
+                      <input
+                        type="number"
+                        value={config.lyricsY}
+                        onChange={(e) => setConfig({ ...config, lyricsY: parseInt(e.target.value) })}
+                        style={{ width: '70px', background: '#111', border: '1px solid #333', color: '#fff', textAlign: 'center' }}
+                      />
+                    </div>
                   </div>
 
                   <div className="control-row" style={{ flexDirection: 'row', gap: '10px' }}>
@@ -530,6 +643,102 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
                 </>
               )}
             </div>
+          </div>
+        )}
+
+        {activeTab === 'effects' && (
+          <div className="panel-section">
+            <h3 className="panel-title">Hiệu ứng Môi trường (Environment)</h3>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+
+              {/* WATER */}
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px', borderRadius: '8px' }}>
+                <div className="control-row" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: (config.enableWater || config.backgroundEffect === 'water') ? '10px' : '0' }}>
+                  <label style={{ fontWeight: 'bold' }}>🌊 Mặt nước (Water)</label>
+                  <input type="checkbox" checked={config.enableWater || config.backgroundEffect === 'water'}
+                    onChange={e => setConfig({ ...config, enableWater: e.target.checked, backgroundEffect: e.target.checked ? 'water' : (config.enableFog ? 'fog' : 'none') })} />
+                  {/* Fallback to fog if water disabled but fog enabled, else none. Complex? Just use flags in Preview */}
+                </div>
+                {(config.enableWater || config.backgroundEffect === 'water') && (
+                  <div style={{ paddingLeft: '10px', borderLeft: '2px solid var(--primary)' }}>
+                    <div className="control-row">
+                      <label>Mực nước</label>
+                      <input type="range" min="0" max="1" step="0.01" value={config.waterLevel ?? 0.7} onChange={e => setConfig({ ...config, waterLevel: parseFloat(e.target.value) })} />
+                    </div>
+                    <div className="control-row">
+                      <label>Biên độ sóng</label>
+                      <input type="range" min="0" max="50" step="1" value={config.waveAmplitude ?? 10} onChange={e => setConfig({ ...config, waveAmplitude: parseFloat(e.target.value) })} />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* FOG */}
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px', borderRadius: '8px' }}>
+                <div className="control-row" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: (config.enableFog || config.backgroundEffect === 'fog') ? '10px' : '0' }}>
+                  <label style={{ fontWeight: 'bold' }}>🌫️ Sương mù (Fog)</label>
+                  <input type="checkbox" checked={config.enableFog || config.backgroundEffect === 'fog'}
+                    onChange={e => setConfig({ ...config, enableFog: e.target.checked })} />
+                </div>
+                {(config.enableFog || config.backgroundEffect === 'fog') && (
+                  <div style={{ paddingLeft: '10px', borderLeft: '2px solid var(--primary)' }}>
+                    <div className="control-row">
+                      <label>Độ dày</label>
+                      <input type="range" min="0" max="1" step="0.05" value={config.fogIntensity ?? 0.5} onChange={e => setConfig({ ...config, fogIntensity: parseFloat(e.target.value) })} />
+                    </div>
+                    <div className="control-row">
+                      <label>Tốc độ trôi</label>
+                      <input type="range" min="0" max="5" step="0.1" value={config.fogSpeed ?? 1} onChange={e => setConfig({ ...config, fogSpeed: parseFloat(e.target.value) })} />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* PARTICLES */}
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px', borderRadius: '8px' }}>
+                <div className="control-row" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: (config.enableGlobalParticles ?? true) ? '10px' : '0' }}>
+                  <label style={{ fontWeight: 'bold' }}>✨ Hạt bụi (Particles)</label>
+                  <input type="checkbox" checked={config.enableGlobalParticles ?? true}
+                    onChange={e => setConfig({ ...config, enableGlobalParticles: e.target.checked })} />
+                </div>
+                {(config.enableGlobalParticles ?? true) && (
+                  <div style={{ paddingLeft: '10px', borderLeft: '2px solid var(--primary)' }}>
+                    <div className="control-row">
+                      <label>Số lượng</label>
+                      <input type="range" min="10" max="3000" step="10"
+                        value={config.particleCount || 80}
+                        onChange={e => setConfig({ ...config, particleCount: parseInt(e.target.value) })}
+                      />
+                    </div>
+                    <div className="control-row">
+                      <label>Tốc độ</label>
+                      <input type="range" min="0.1" max="3" step="0.1"
+                        value={config.particleSpeed || 0.5}
+                        onChange={e => setConfig({ ...config, particleSpeed: parseFloat(e.target.value) })}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* FLOATING */}
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px', borderRadius: '8px' }}>
+                <div className="control-row" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', margin: 0 }}>
+                  <label style={{ fontWeight: 'bold' }}>🎈 Trôi nổi (Floating)</label>
+                  <input
+                    type="checkbox"
+                    checked={config.enableFloatingObject ?? true}
+                    onChange={e => setConfig({ ...config, enableFloatingObject: e.target.checked })}
+                  />
+                </div>
+                <div style={{ fontSize: '0.7rem', color: '#888', marginTop: '5px' }}>
+                  Áp dụng chuyển động nhẹ cho Hình ảnh & Thông tin bài hát.
+                </div>
+              </div>
+
+            </div>
+
           </div>
         )}
 
@@ -606,8 +815,10 @@ const Sidebar = ({ config, setConfig, lyricsRaw, setLyricsRaw, onReset, timings,
           </div>
         )}
 
+
       </div>
     </div>
+
   );
 };
 

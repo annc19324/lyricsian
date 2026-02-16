@@ -121,12 +121,11 @@ const Preview = forwardRef(({ config, lyrics, currentLineIndex, canvasRef, audio
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d', { alpha: false });
+        const { width, height, fontFamily, lyricSize, activeColor } = config;
 
-        // 0. Resolve effective time and index
+        // 0. Resolve Time/Index
         let effectiveTime = inputTime;
         let index = 0;
-
-        // Find active index based on time and timings
         if (timings && timings.length > 0) {
             const hasValidTimings = timings.some(t => t.time > 0.1);
             if (hasValidTimings) {
@@ -138,32 +137,43 @@ const Preview = forwardRef(({ config, lyrics, currentLineIndex, canvasRef, audio
                         if (t.time > maxTimeFound) {
                             maxTimeFound = t.time;
                             activeIndex = t.index;
-                        } else if (t.time === maxTimeFound) {
-                            if (t.index > activeIndex) activeIndex = t.index;
+                        } else if (t.time === maxTimeFound && t.index > activeIndex) {
+                            activeIndex = t.index;
                         }
                     }
                 }
                 if (activeIndex !== -1) index = activeIndex;
             }
         }
-        // Fallback or override if no timing matched? Use current pointer? 
-        // Actually for offline render, we trust time -> index. 
-        // For editing, we might want to respect selected index.
-        // But the prompt implies "Audio plays -> Preview updates". 
-        // So time is truth.
 
-        const { width, height, fontFamily, lyricSize, activeColor } = config;
+        // --- CINEMATIC CAMERA MOVEMENT (Subtle Zoom/Pan) ---
+        // We apply this transform to the entire scene (except maybe UI overlays if we had any)
+        // Ideally applies to everything including background and lyrics.
 
-        // 1. Clear & Setup
+        ctx.save(); // Start Global Camera Transform
+
+        const camTime = effectiveTime * 0.05; // Very slow
+        // Subtle Zoom breathing: 1.0 to 1.02
+        const camZoom = 1.0 + Math.sin(camTime) * 0.015;
+        // Subtle Pan: -10px to +10px
+        const camPanX = Math.sin(camTime * 0.7) * 15;
+        const camPanY = Math.cos(camTime * 0.5) * 10;
+
+        // Center zoom
+        ctx.translate(width / 2, height / 2);
+        ctx.scale(camZoom, camZoom);
+        ctx.translate(-width / 2, -height / 2);
+        ctx.translate(camPanX, camPanY);
+
+        // 1. Clear & Background Base
         ctx.fillStyle = '#111';
-        ctx.fillRect(0, 0, width, height);
+        ctx.fillRect(-100, -100, width + 200, height + 200); // Overscan clear
 
         const centerX = width / 2;
         const centerY = height / 2;
         const isVertical = height > width;
 
-        // 2. Draw Background (Cover Image)
-        if (coverImgRef.current && coverImgRef.current.complete && coverImgRef.current.naturalWidth > 0) {
+        if (coverImgRef.current?.complete && coverImgRef.current.naturalWidth > 0) {
             ctx.save();
             const img = coverImgRef.current;
             const ratio = Math.max(width / img.naturalWidth, height / img.naturalHeight);
@@ -171,155 +181,183 @@ const Preview = forwardRef(({ config, lyrics, currentLineIndex, canvasRef, audio
             const h = img.naturalHeight * ratio;
             const x = (width - w) / 2;
             const y = (height - h) / 2;
-            ctx.filter = `blur(${config.coverBlur ?? 40}px) brightness(0.4)`;
+
+            // Depth of Field Simulation for Background
+            // If we want "Cinematic Blur", we blur the background layer more.
+            // Configurable or fixed style? Let's go for fixed Cinematic style.
+            ctx.filter = `blur(${config.coverBlur ?? 40}px) brightness(0.6) contrast(1.1)`; // Enhanced contrast
+
+            // Color Grading (Cool Blue Night or Warm Sunset)
+            // Let's assume Cool Blue for Water/Fog as default Cinematic
+            // We can't easily tint an image without composite.
+
             ctx.drawImage(img, x, y, w, h);
+
+            // Color Grading Overlay - Blue Night
+            ctx.fillStyle = 'rgba(10, 20, 40, 0.4)'; // Dark Blue Tint
+            ctx.globalCompositeOperation = 'overlay';
+            ctx.fillRect(x, y, w, h);
+
             ctx.restore();
         }
 
-        // 3. Draw Main Image
-        if (mainImgRef.current && mainImgRef.current.complete && mainImgRef.current.naturalWidth > 0) {
+        // --- HORIZON GLOW (Soft Light from distance) ---
+        // Only show horizon glow if there is a water surface to reflect/define it.
+        if (config.enableWater || config.backgroundEffect === 'water') {
             ctx.save();
-            let baseX = isVertical ? centerX : (width * 0.3);
-            let baseY = isVertical ? (height * 0.3) : centerY;
-            let drawX = baseX + config.imageX;
-            let drawY = baseY + config.imageY;
-            const img = mainImgRef.current;
-            const scale = config.imageScale || 1;
-            const w = img.naturalWidth * scale;
-            const h = img.naturalHeight * scale;
-            ctx.shadowColor = 'rgba(0,0,0,0.5)';
-            ctx.shadowBlur = 20;
-            ctx.shadowOffsetX = 10;
-            ctx.shadowOffsetY = 10;
-            ctx.drawImage(img, drawX - w / 2, drawY - h / 2, w, h);
-            ctx.restore();
+            const horizonY = height * (config.waterLevel || 0.7);
 
-            // Draw Song Info Text
-            ctx.save();
-            ctx.textAlign = isVertical ? 'center' : 'left';
+            const glowGrad = ctx.createLinearGradient(0, horizonY - 200, 0, horizonY + 100);
+            glowGrad.addColorStop(0, 'rgba(150, 200, 255, 0)');
+            glowGrad.addColorStop(0.8, 'rgba(180, 220, 255, 0.15)'); // Horizon line light
+            glowGrad.addColorStop(1, 'rgba(150, 200, 255, 0)');
 
-            const textX = isVertical ? drawX : (drawX - w / 2);
-            let baseTextY = isVertical ? (drawY + h / 2 + 40) : (drawY + h / 2 + 50);
+            ctx.globalCompositeOperation = 'screen'; // Additive
+            ctx.fillStyle = glowGrad;
+            ctx.fillRect(0, horizonY - 200, width, 300);
 
-            // Song
-            ctx.shadowColor = 'rgba(0,0,0,0.8)';
-            ctx.shadowBlur = 4;
-            ctx.shadowOffsetX = 2;
-            ctx.shadowOffsetY = 2;
+            // Light Rays (Subtle)
+            const rayTime = effectiveTime * 0.2;
+            const rayX = width * 0.5 + Math.sin(rayTime) * 200;
+            const rayGrad = ctx.createRadialGradient(rayX, horizonY - 100, 0, rayX, horizonY + 200, 600);
+            rayGrad.addColorStop(0, 'rgba(255, 255, 255, 0.08)');
+            rayGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
 
-            ctx.font = `bold ${config.songSize || 40}px ${fontFamily} `;
-            ctx.fillStyle = config.songColor || 'white';
-            ctx.fillText(config.songName || '', textX + (config.songX || 0), baseTextY + (config.songY || 0));
+            ctx.rotate(Math.PI * 0.1); // Angled rays
+            ctx.translate(100, -200);
+            ctx.fillStyle = rayGrad;
+            ctx.fillRect(-500, horizonY - 500, width + 1000, 1000); // Oversize
 
-            // Artist
-            const artistBaseY = baseTextY + 45;
-            ctx.font = `${config.artistSize || 30}px ${fontFamily} `;
-            ctx.fillStyle = config.artistColor || '#ddd';
-            ctx.fillText(config.artistName || '', textX + (config.artistX || 0), artistBaseY + (config.artistY || 0));
-
-            // Channel
-            const channelBaseY = artistBaseY + 35;
-            if (config.channelName) {
-                ctx.font = `italic ${config.channelSize || 20}px ${fontFamily} `;
-                ctx.fillStyle = config.channelColor || 'rgba(255,255,255,0.6)';
-                ctx.fillText(config.channelName, textX + (config.channelX || 0), channelBaseY + (config.channelY || 0));
-            }
             ctx.restore();
         }
 
-        // 4. Draw Lyrics using Pre-calculated Positions
-        ctx.save();
+        // --- DRAW SCENE FUNCTION (Accepts targetCTX) ---
+        const drawScene = (targetCtx, isReflection = false) => {
+            // Main Image
+            if (mainImgRef.current?.complete && mainImgRef.current.naturalWidth > 0) {
+                targetCtx.save();
+                let baseX = isVertical ? centerX : (width * 0.3);
+                let baseY = isVertical ? (height * 0.3) : centerY;
+                let drawX = baseX + config.imageX;
+                let drawY = baseY + config.imageY;
+                const img = mainImgRef.current;
+                const scale = config.imageScale || 1;
+                const w = img.naturalWidth * scale;
+                const h = img.naturalHeight * scale;
 
-        let lyricsBaseX = isVertical ? centerX : (width * 0.7);
-        let lyricsBaseY = isVertical ? (height * 0.75) : centerY;
-        let tx = lyricsBaseX + config.lyricsX;
-        let ty = lyricsBaseY + config.lyricsY;
+                if (!isReflection) {
+                    // Slight floating motion for Main Image
+                    if (config.enableFloatingObject !== false) {
+                        const floatY = Math.sin(effectiveTime * 1.5) * 5;
+                        drawY += floatY;
+                    }
 
-        ctx.translate(tx, ty);
-        ctx.scale(config.lyricsScale, config.lyricsScale);
-        ctx.textAlign = config.lyricsAlign;
-        ctx.textBaseline = 'middle';
-        ctx.font = `bold ${lyricSize}px ${fontFamily} `;
+                    targetCtx.shadowColor = 'rgba(0,0,0,0.5)';
+                    targetCtx.shadowBlur = 20;
+                    targetCtx.shadowOffsetX = 10;
+                    targetCtx.shadowOffsetY = 10;
+                }
 
-        const positions = positionsRef.current;
-        const activePos = positions[index];
-        const targetScroll = activePos ? activePos.cy : 0;
+                targetCtx.drawImage(img, drawX - w / 2, drawY - h / 2, w, h);
+                targetCtx.restore();
 
-        // Smooth Scroll Logic: 
-        // For Offline Export (isPlaying can be hijacked or just rely on 'inputTime')
-        // In "Frame Based" approach, we ideally want exact scroll position for 'inputTime'.
-        // But scroll is an aesthetic state.
-        // If we are strictly offline, we should calculate scroll based on time?
-        // Or just SNAP if it's a new line.
-        // Let's implement a simple lerp state update:
-        // BUT: render function is stateless in pure frame-based. 
-        // We need to persist scroll state externally or handle it here?
-        // We have scrollYRef.
-        // Ideally: Scroll = TargetScroll of current index. (Instant snap in export? No, hard cut is bad)
-        // Lerp is time-dependent.
-        // Let's sim lerp: if |target - current| > threshold, move 10%.
+                // Song Info
+                targetCtx.save();
+                targetCtx.textAlign = isVertical ? 'center' : 'left';
+                const textX = isVertical ? drawX : (drawX - w / 2);
+                let baseTextY = isVertical ? (drawY + h / 2 + 40) : (drawY + h / 2 + 50);
 
-        let currentScroll = scrollYRef.current;
-        const diff = targetScroll - currentScroll;
+                if (!isReflection) {
+                    targetCtx.shadowColor = 'rgba(0,0,0,0.8)';
+                    targetCtx.shadowBlur = 4;
+                    targetCtx.shadowOffsetX = 2;
+                    targetCtx.shadowOffsetY = 2;
+                }
 
-        // Critical: If 'editing' (drag/seek), we might snap.
-        // If 'exporting', we process frame by frame. Since frames are 1/30s apart, 
-        // running 0.1 lerp per frame is effectively 30FPS animation.
-        // So standard lerp works fine!
+                targetCtx.font = `bold ${config.songSize || 40}px ${fontFamily} `;
+                targetCtx.fillStyle = config.songColor || 'white';
+                targetCtx.fillText(config.songName || '', textX + (config.songX || 0), baseTextY + (config.songY || 0));
 
-        if (Math.abs(diff) > 0.5) {
-            currentScroll += diff * 0.1;
-        } else {
-            currentScroll = targetScroll;
-        }
-        scrollYRef.current = currentScroll;
+                const artistBaseY = baseTextY + 45;
+                targetCtx.font = `${config.artistSize || 30}px ${fontFamily} `;
+                targetCtx.fillStyle = config.artistColor || '#ddd';
+                targetCtx.fillText(config.artistName || '', textX + (config.artistX || 0), artistBaseY + (config.artistY || 0));
 
-        // 5. Draw Strings
-        positions.forEach((pos, i) => {
-            const lineY = pos.cy - currentScroll;
-
-            const maxAbove = config.maxLinesAbove ?? 2;
-            const maxBelow = config.maxLinesBelow ?? 2;
-            if (i < index - maxAbove || i > index + maxBelow) return;
-
-            const isActive = (i === index);
-            let opacity = 0.4;
-            if (isActive) opacity = 1;
-            else {
-                const dist = Math.abs(index - i);
-                opacity = Math.max(0.1, 0.4 - (dist * 0.05));
+                if (config.channelName) {
+                    const channelBaseY = artistBaseY + 35;
+                    targetCtx.font = `italic ${config.channelSize || 20}px ${fontFamily} `;
+                    targetCtx.fillStyle = config.channelColor || 'rgba(255,255,255,0.6)';
+                    targetCtx.fillText(config.channelName, textX + (config.channelX || 0), channelBaseY + (config.channelY || 0));
+                }
+                targetCtx.restore();
             }
 
-            ctx.save();
+            // Lyrics
+            targetCtx.save();
+            let lyricsBaseX = isVertical ? centerX : (width * 0.7);
+            let lyricsBaseY = isVertical ? (height * 0.75) : centerY;
+            let tx = lyricsBaseX + config.lyricsX;
+            let ty = lyricsBaseY + config.lyricsY;
 
-            let styles = config.highlightStyles;
-            if (!styles) {
-                styles = config.highlightStyle ? [config.highlightStyle] : ['color'];
+            targetCtx.translate(tx, ty);
+            targetCtx.scale(config.lyricsScale, config.lyricsScale);
+            targetCtx.textAlign = config.lyricsAlign;
+            targetCtx.textBaseline = 'middle';
+            targetCtx.font = `bold ${lyricSize}px ${fontFamily} `;
+
+            const positions = positionsRef.current;
+            const activePos = positions[index];
+            const targetScroll = activePos ? activePos.cy : 0;
+
+            // Scroll Logic
+            let currentScroll = scrollYRef.current;
+            if (!isReflection) {
+                const diff = targetScroll - currentScroll;
+                // Smoother scroll (ease-out)
+                if (Math.abs(diff) > 0.5) currentScroll += diff * 0.08;
+                else currentScroll = targetScroll;
+                scrollYRef.current = currentScroll;
             }
 
-            if (isActive) {
-                if (styles.includes('color')) ctx.fillStyle = activeColor;
-                else ctx.fillStyle = '#ffffff';
+            positions.forEach((pos, i) => {
+                const lineY = pos.cy - currentScroll;
+                const maxAbove = config.maxLinesAbove ?? 2;
+                const maxBelow = config.maxLinesBelow ?? 2;
+                if (i < index - maxAbove || i > index + maxBelow) return;
 
-                if (styles.includes('color')) ctx.fillStyle = activeColor;
+                const isActive = (i === index);
+                let opacity = 0.4;
+                if (isActive) opacity = 1;
+                else {
+                    const dist = Math.abs(index - i);
+                    opacity = Math.max(0.1, 0.4 - (dist * 0.05));
+                }
+                if (isReflection) opacity *= 0.7;
 
-                if (styles.includes('glow')) {
-                    ctx.shadowColor = activeColor;
-                    ctx.shadowBlur = 20;
+                targetCtx.save();
+                let styles = config.highlightStyles || [];
+                const useCustomGlow = styles.includes('glow');
+                const glowSize = useCustomGlow ? (config.lyricsGlowSize || 20) : 0;
+
+                targetCtx.fillStyle = isActive ? activeColor : `rgba(255, 255, 255, ${opacity})`;
+
+                if (isActive && useCustomGlow && !isReflection) {
+                    targetCtx.shadowColor = activeColor;
+                    targetCtx.shadowBlur = glowSize;
                 } else {
-                    ctx.shadowBlur = 0;
+                    targetCtx.shadowBlur = 0;
                 }
 
-                if (styles.includes('scale')) {
-                    ctx.translate(0, lineY);
-                    ctx.scale(1.2, 1.2);
-                    ctx.translate(0, -lineY);
+                if (isActive && styles.includes('scale')) {
+                    targetCtx.translate(0, lineY);
+                    targetCtx.scale(1.2, 1.2);
+                    targetCtx.translate(0, -lineY);
                 }
 
-                if (styles.includes('box')) {
+                if (isActive && styles.includes('box')) {
                     let maxLineWidth = 0;
                     pos.subLines.forEach(sub => {
-                        const m = ctx.measureText(sub);
+                        const m = targetCtx.measureText(sub);
                         if (m.width > maxLineWidth) maxLineWidth = m.width;
                     });
                     const pad = 20;
@@ -331,71 +369,366 @@ const Preview = forwardRef(({ config, lyrics, currentLineIndex, canvasRef, audio
                     else if (config.lyricsAlign === 'right') boxX = -boxWidth;
                     else boxX = -pad;
                     const boxY = lineY - (blockH / 2) - pad;
-                    ctx.fillStyle = activeColor;
+
+                    targetCtx.fillStyle = activeColor;
                     const r = 16;
-                    ctx.beginPath();
-                    ctx.roundRect(boxX, boxY, boxWidth, boxHeight, r);
-                    ctx.fill();
-                    ctx.fillStyle = '#000000';
+                    targetCtx.beginPath();
+                    targetCtx.roundRect(boxX, boxY, boxWidth, boxHeight, r);
+                    targetCtx.fill();
+
+                    const strokeWidth = config.lyricsBorderWidth || 0;
+                    if (strokeWidth > 0 && !isReflection) {
+                        targetCtx.lineWidth = strokeWidth;
+                        targetCtx.strokeStyle = config.lyricsBorderColor || '#000000';
+                        targetCtx.stroke();
+                    }
+                    targetCtx.fillStyle = '#000000';
                 }
-            } else {
-                ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
-                ctx.shadowBlur = 0;
-            }
 
-            const isKaraoke = isActive && styles.includes('karaoke');
-            // const currentTime = (audioRef && audioRef.current) ? audioRef.current.currentTime : 0; 
-            // NO! Use effectiveTime
-            const currentTime = effectiveTime;
+                const subLineHeight = lyricSize * 1.2;
+                // Box & Stroke Logic Omitted for brevity, assuming standard call
+                // (Paste previous Box/Stroke logic here if implementing full snippet)
+                // For brevity in this diff, reusing standard stroke/fill logic logic implicitly or simplified:
 
-            const subLineHeight = lyricSize * 1.2;
+                // --- Simple Text Render Block ---
+                pos.subLines.forEach((sub, subIndex) => {
+                    const verticalOffset = (subIndex - (pos.subLines.length - 1) / 2) * subLineHeight;
+                    const y = lineY + verticalOffset;
 
-            pos.subLines.forEach((sub, subIndex) => {
-                const verticalOffset = (subIndex - (pos.subLines.length - 1) / 2) * subLineHeight;
-                const y = lineY + verticalOffset;
-
-                if (isKaraoke) {
-                    ctx.save();
-                    ctx.globalAlpha = 0.3;
-                    ctx.fillText(sub, 0, y);
-                    ctx.restore();
-
-                    const start = timings[i] ? timings[i].time : 0;
-                    const next = (timings[i + 1] && timings[i + 1].time > 0.1) ? timings[i + 1].time : (start + 2.5);
-                    const kSpeed = config.karaokeSpeed || 1.0;
-                    const duration = (next - start) / kSpeed;
-                    const globalProgress = Math.min(1, Math.max(0, (currentTime - start) / duration));
-
-                    const totalSubCount = pos.subLines.length;
-                    const subStart = subIndex / totalSubCount;
-                    const subEnd = (subIndex + 1) / totalSubCount;
-
-                    let subProgress = 0;
-                    if (globalProgress >= subEnd) subProgress = 1;
-                    else if (globalProgress >= subStart) {
-                        subProgress = (globalProgress - subStart) / (subEnd - subStart);
+                    // Border
+                    if (config.lyricsBorderWidth > 0 && !isReflection) {
+                        targetCtx.lineWidth = config.lyricsBorderWidth;
+                        targetCtx.strokeStyle = config.lyricsBorderColor || '#000000';
+                        targetCtx.lineJoin = 'round';
+                        targetCtx.miterLimit = 2;
+                        targetCtx.strokeText(sub, 0, y);
                     }
 
-                    const tw = ctx.measureText(sub).width;
-                    const fillWidth = tw * subProgress;
+                    // Karaoke
+                    const isKaraoke = isActive && styles.includes('karaoke');
+                    if (isKaraoke) {
+                        const start = timings[i] ? timings[i].time : 0;
+                        const next = (timings[i + 1]?.time > 0.1) ? timings[i + 1].time : (start + 2.5);
+                        const kSpeed = config.karaokeSpeed || 1.0;
+                        const duration = (next - start) / kSpeed;
+                        const globalProgress = Math.min(1, Math.max(0, (effectiveTime - start) / duration));
 
-                    let startX = 0;
-                    if (config.lyricsAlign === 'center') startX = -tw / 2;
-                    else if (config.lyricsAlign === 'right') startX = -tw;
+                        const totalSubCount = pos.subLines.length;
+                        const subStart = subIndex / totalSubCount;
+                        const subEnd = (subIndex + 1) / totalSubCount;
 
-                    ctx.save();
-                    ctx.beginPath();
-                    ctx.rect(startX, y - (subLineHeight / 2), fillWidth, subLineHeight);
-                    ctx.clip();
-                    ctx.fillText(sub, 0, y);
-                    ctx.restore();
-                } else {
-                    ctx.fillText(sub, 0, y);
-                }
+                        let subProgress = 0;
+                        if (globalProgress >= subEnd) subProgress = 1;
+                        else if (globalProgress >= subStart) subProgress = (globalProgress - subStart) / (subEnd - subStart);
+
+                        const tw = targetCtx.measureText(sub).width;
+                        const fillWidth = tw * subProgress;
+                        let startX = 0;
+                        if (config.lyricsAlign === 'center') startX = -tw / 2;
+                        else if (config.lyricsAlign === 'right') startX = -tw;
+
+                        targetCtx.save();
+                        targetCtx.globalAlpha = 0.3;
+                        targetCtx.fillText(sub, 0, y);
+                        targetCtx.restore();
+
+                        targetCtx.save();
+                        targetCtx.beginPath();
+                        targetCtx.rect(startX, y - (subLineHeight / 2), fillWidth, subLineHeight);
+                        targetCtx.clip();
+                        targetCtx.fillStyle = activeColor;
+                        targetCtx.fillText(sub, 0, y);
+                        targetCtx.restore();
+                    } else {
+                        targetCtx.fillText(sub, 0, y);
+                    }
+                });
+
+                targetCtx.restore();
             });
+            targetCtx.restore();
+        };
+
+        // 2. Draw Main Scene
+        drawScene(ctx, false);
+
+        // --- FLOATING MICRO PARTICLES (Atmosphere) ---
+        if (config.enableGlobalParticles !== false) {
+            const pCount = config.particleCount || 80;
+            const pSpeed = config.particleSpeed || 0.5;
+            const pTime = effectiveTime * pSpeed;
+            ctx.save();
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.shadowColor = 'white';
+            ctx.shadowBlur = 2;
+
+            for (let i = 0; i < pCount; i++) {
+                const seed = i * 4444;
+                const rnd = (n) => Math.abs(Math.sin(seed + n));
+
+                const xBase = rnd(1) * width;
+                const yBase = rnd(2) * height;
+
+                // Drifting Logic
+                const x = (xBase + Math.sin(pTime + i) * 30) % width;
+                const y = (yBase + Math.cos(pTime + i * 0.5) * 30) % height;
+                const size = rnd(3) * 1.5 + 0.5; // Micro size
+
+                // Fade in/out
+                const alpha = (0.2 + 0.8 * Math.sin(pTime * 2 + i)) * 0.5;
+
+                ctx.globalAlpha = alpha;
+                ctx.beginPath();
+                ctx.arc(x, y, size, 0, Math.PI * 2);
+                ctx.fill();
+            }
             ctx.restore();
-        });
-        ctx.restore();
+        }
+
+        // 5. Cinematic Water (Enhanced Reflection)
+        if (config.enableWater || config.backgroundEffect === 'water') {
+            const waterY = height * (config.waterLevel || 0.7);
+            const waterH = height - waterY;
+
+            const offC = document.createElement('canvas');
+            offC.width = width;
+            offC.height = height;
+            const offCtx = offC.getContext('2d');
+
+            // Draw reflection flipped
+            offCtx.translate(0, 2 * waterY);
+            offCtx.scale(1, -1);
+            drawScene(offCtx, true);
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(0, waterY, width, height - waterY);
+            ctx.clip();
+
+            // -- Cinematic Water Rendering (Scanline + Distortion) --
+            const waveBaseSpeed = config.waveSpeed || 1;
+            const waveBaseAmp = config.waveAmplitude || 10;
+            const sliceHeight = 2;
+
+            for (let y = waterY; y < height; y += sliceHeight) {
+                const depth = (y - waterY) / waterH;
+                const amp = waveBaseAmp * (0.2 + 0.8 * depth);
+                const realTime = effectiveTime * waveBaseSpeed;
+
+                // Complex Wave function
+                const w1 = Math.sin(y * 0.02 + realTime);
+                const w2 = Math.sin(y * 0.05 + realTime * 2.5) * 0.5;
+                const w3 = Math.sin(y * 0.1 + realTime * 0.5) * 0.2;
+
+                const xShift = (w1 + w2 + w3) * amp;
+
+                // Draw slice
+                // Add blur to reflection (fake depth)
+                // We can simulate blur by drawing multiple times with offset or just reducing opacity?
+                // Real blur needs filter.
+                // offCtx.filter = `blur(${depth * 4}px)`; // Can't change offCtx per line easily.
+
+                ctx.globalAlpha = 0.8 - (depth * 0.4); // Fade out at bottom
+                ctx.drawImage(offC, 0, y, width, sliceHeight, xShift, y, width, sliceHeight);
+            }
+
+            // Water Lighting Overlay
+            const grad = ctx.createLinearGradient(0, waterY, 0, height);
+            grad.addColorStop(0, `rgba(150, 180, 255, ${0.15})`); // Horizon highlight
+            grad.addColorStop(0.3, `rgba(0, 30, 60, ${0.3})`);
+            grad.addColorStop(0.8, `rgba(0, 5, 20, ${0.7})`); // Deep dark
+
+            ctx.fillStyle = grad;
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.fillRect(0, waterY, width, height - waterY); // Fix: Add fillRect
+
+            ctx.restore();
+        }
+
+        // 6. Cinematic Fog (Full Screen - Drifting)
+        if (config.enableFog || config.backgroundEffect === 'fog') {
+            const intensity = config.fogIntensity || 0.5;
+            const speed = (config.fogSpeed || 1) * 0.5;
+
+            ctx.save();
+            const t = effectiveTime * speed;
+
+            // Full Screen Haze (Base Layer)
+            ctx.fillStyle = `rgba(200, 220, 255, ${0.1 * intensity})`;
+            ctx.fillRect(0, 0, width, height);
+
+            // Drifting Mist Clouds (Mid Layer)
+            const count = 15;
+            ctx.globalCompositeOperation = 'screen'; // Additive
+
+            for (let i = 0; i < count; i++) {
+                const seed = i * 2222;
+                const rnd = (n) => Math.abs(Math.sin(seed + n));
+
+                const size = (width * 0.6) + rnd(1) * width * 0.4; // Large blobs
+                const xBase = rnd(2) * width;
+                const yBase = rnd(3) * height; // All over Y axis
+
+                // Continuous Drift Logic
+                const driftSpeed = 50 * (1 + rnd(4));
+                const x = (xBase + t * driftSpeed) % (width + size * 2) - size;
+                const y = (yBase + Math.sin(t * 0.5 + i) * 20) % (height + size) - size / 2;
+
+                const grad = ctx.createRadialGradient(x, y, 0, x, y, size);
+                grad.addColorStop(0, `rgba(220, 240, 255, ${0.08 * intensity})`);
+                grad.addColorStop(1, `rgba(220, 240, 255, 0)`);
+
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(x, y, size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.restore();
+        }
+
+        ctx.restore(); // End Camera movement transform
+
+
+        // 6. Realistic Rain Effect (Multi-Layer + Splash Physics)
+        if (config.backgroundEffect === 'rain') {
+            const intensity = config.rainIntensity || 0.5;
+            const seedTime = effectiveTime; // Use time for determinism
+
+            // Slow Motion Burst logic:
+            // Use time noise to determine "Slow Mo Zones"
+            // sin(time * 0.2) > 0.8 ?
+            const isSlowMo = (Math.sin(effectiveTime * 0.5) > 0.6); // Occasional slow mo
+            const timeScale = isSlowMo ? 0.3 : 1.0;
+            // Note: Mixing procedural time * timeScale is tricky for position continuity.
+            // P = V * T. If V changes, P jumps.
+            // Correct approach: P = Integral(V dt). 
+            // Without integration state, we can't do variable speed smoothly in a purely time-function render.
+            // Fallback: Constant speed for rain layers, but vary "Rain Intensity" visually?
+            // Or just stick to base speed config.
+
+            const baseSpeed = (config.rainSpeed || 1) * 2.0;
+
+            const layers = [
+                { id: 'bg', count: 0.5, speed: 0.8 * baseSpeed, size: 0.5, opacity: 0.3 },
+                { id: 'mid', count: 0.3, speed: 1.2 * baseSpeed, size: 1.0, opacity: 0.6 },
+                { id: 'fg', count: 0.2, speed: 1.6 * baseSpeed, size: 2.0, opacity: 0.8 }
+            ];
+
+            const totalCount = config.particleCount || 200;
+            const waterY = (config.backgroundEffect === 'water') ? height * (config.waterLevel || 0.7) : height;
+            const hasWater = (config.backgroundEffect === 'water');
+            const wind = 30; // Wind pixels x-shift
+
+            ctx.save();
+            ctx.lineCap = 'round';
+
+            // Render Layers
+            layers.forEach(layer => {
+                const count = totalCount * layer.count * intensity * 5;
+                ctx.beginPath();
+                ctx.lineWidth = layer.size;
+                ctx.strokeStyle = `rgba(230, 240, 255, ${layer.opacity})`;
+
+                for (let i = 0; i < count; i++) {
+                    const seed = i * 12345 + layer.speed * 99;
+                    const rnd = (n) => {
+                        const x = Math.sin(seed + n * 12.34);
+                        return x - Math.floor(x); // 0..1ish
+                    };
+
+                    // X Position
+                    let x = (rnd(1) * width * 1.5) - (width * 0.25); // padded for wind
+
+                    // Y Position (Time Based)
+                    // y = (time * speed + offset) % region
+                    const regionH = height + 100;
+                    const timeOffset = rnd(2) * regionH;
+                    let speed = layer.speed * 20 * (1 + rnd(3) * 0.2); // variation
+
+
+
+                    const rawY = (effectiveTime * 20 * speed + timeOffset);
+                    let y = (rawY % regionH) - 100; // Screen Y
+
+                    // Wind Shear
+                    x += (y / height) * wind;
+
+                    // Length
+                    const len = 20 * layer.size * (1 + rnd(4)) * (isSlowMo ? 1.5 : 1.0);
+
+                    // Collision with Water
+                    if (hasWater && y > waterY) {
+                        // Drop has passed water.
+                        // Check if it *just* passed? 
+                        // Raw delta check:
+                        const cycleIndex = Math.floor(rawY / regionH);
+                        // If we are strictly relying on frame-check, splashes might be missed.
+                        // VISUAL TRICK: Use specific hash to spawn *static* splashes at water level 
+                        // that "blink" based on time.
+
+                        const splashSeed = Math.floor(rawY / regionH) + i;
+                        // Is this splash active *now*?
+                        const hitTime = (cycleIndex * regionH + (waterY + 100 - timeOffset)) / (20 * speed);
+                        const diff = effectiveTime - hitTime;
+
+                        if (Math.abs(diff) < 0.2) { // Splash visible for 0.2s
+                            // Draw Splash Ripple
+                            const p = diff / 0.2; // 0 to 1
+                            const radius = (10 + rnd(5) * 20) * layer.size * p;
+                            const alpha = (1 - p) * layer.opacity;
+
+                            // Must use separate path for arcs?
+                            // Actually we can just draw them at end of loop?
+                            // Let's store splashes to draw after lines.
+                        }
+                    } else {
+                        // Regular Drop
+                        ctx.moveTo(x, y);
+                        ctx.lineTo(x - (wind / height) * len * 0.5, y + len);
+                    }
+                }
+                ctx.stroke();
+            });
+
+            // -- PARTICLE SYSTEM FOR SPLASHES (Non-Deterministic Visuals for "Wow" factor) --
+            // Since we can't easily integrate physics in a seekable renderer without pre-calc,
+            // we use a "Visual Cloud" of splashes near the water line.
+
+            if (hasWater) {
+                const splashCount = 20 * intensity;
+                ctx.fillStyle = `rgba(200, 230, 255, 0.5)`;
+                ctx.beginPath();
+
+                for (let s = 0; s < splashCount; s++) {
+                    // Random splashes appearing
+                    const seed = Math.floor(effectiveTime * 10) + s; // Changes 10 times/sec
+                    const rnd = (n) => Math.abs(Math.sin(seed * n));
+
+                    if (rnd(1) > 0.5) continue; // Flicker
+
+                    const sx = rnd(2) * width;
+                    const sy = waterY + (rnd(3) - 0.5) * 5; // Near surface
+
+                    // Jump particles
+                    const pCount = 3 + Math.floor(rnd(4) * 5);
+                    for (let p = 0; p < pCount; p++) {
+                        const px = sx + (rnd(p * 10) * 20 - 10);
+                        const py = sy - rnd(p * 20) * 30; // Upwards
+                        const size = rnd(p) * 2;
+                        ctx.moveTo(px, py);
+                        ctx.arc(px, py, size, 0, Math.PI * 2);
+                    }
+
+                    // Ripple Ring
+                    ctx.moveTo(sx + 20, sy);
+                    ctx.ellipse(sx, sy, 20 * rnd(5), 5 * rnd(5), 0, 0, Math.PI * 2);
+                }
+                ctx.fill();
+            }
+
+            ctx.restore();
+        }
     };
 
     // Update render on config change (removing debounce for smooth slider preview)

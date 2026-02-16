@@ -45,12 +45,23 @@ const defaultConfig = {
     channelX: 0, channelY: 0, channelSize: 20, channelColor: '#aaaaaa',
 
     // Audio Defaults
-    trimStart: 0,
     trimEnd: 0,
     fadeIn: 0,
-    fadeOut: 0
-};
+    fadeOut: 0,
 
+    // New Effects & Styling
+    lyricsGlowSize: 0,      // Custom Glow Size
+    lyricsBorderWidth: 0,   // Custom Border Thickness
+    lyricsBorderColor: '#000000',
+    backgroundEffect: 'none', // none, rain, water
+    waterLevel: 0.7,        // Position of water surface (0 to 1)
+    rainIntensity: 0.5,
+    rainSpeed: 1.0,
+    waveSpeed: 1.0,         // For water
+    waveAmplitude: 10,      // For water
+    reflectionOpacity: 0.5, // For water
+    particleCount: 100      // For rain/particles
+};
 const EditorType1 = () => {
     const [sidebarWidth, setSidebarWidth] = useState(450);
     const [isResizing, setIsResizing] = useState(false);
