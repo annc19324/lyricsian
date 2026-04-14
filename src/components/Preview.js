@@ -73,20 +73,24 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
         const maxWidth = width * 0.8;
 
         const wrapText = (text, maxW) => {
+            const lines = [];
+            let currentLine = "";
             const words = text.split(' ');
-            let lines = [];
-            let currentLine = words[0];
-            for (let i = 1; i < words.length; i++) {
+            
+            for (let i = 0; i < words.length; i++) {
                 const word = words[i];
-                const w = ctx.measureText(currentLine + " " + word).width;
-                if (w < maxW) {
-                    currentLine += " " + word;
+                // Clean syntax for measurement
+                const cleanWord = word.replace(/[\[\]]/g, '');
+                const testLine = currentLine + (currentLine ? " " : "") + cleanWord;
+                const w = ctx.measureText(testLine).width;
+                if (w < maxW || !currentLine) {
+                    currentLine += (currentLine ? " " : "") + word;
                 } else {
                     lines.push(currentLine);
                     currentLine = word;
                 }
             }
-            lines.push(currentLine);
+            if (currentLine) lines.push(currentLine);
             return lines;
         };
 
@@ -94,6 +98,10 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
         let cursorY = 0;
 
         lyrics.forEach((line, i) => {
+            // Pre-process syntax highlighting markers
+            const segments = line.text.split(/(\[.*?\])/g).filter(s => s);
+            const flatText = segments.map(s => s.replace(/[\[\]]/g, '')).join('');
+            
             const explicitLines = line.text.split('\n');
             let finalSubLines = [];
             explicitLines.forEach(l => {
@@ -108,7 +116,7 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
 
         positionsRef.current = positions;
 
-    }, [lyrics, config.width, config.height, config.lyricSize, config.fontFamily, config.lyricsScale]);
+    }, [lyrics, config.width, config.height, config.lyricSize, config.fontFamily, config.lyricsScale, config.highlightColor]);
 
     // Expose render method to parent
     useImperativeHandle(ref, () => ({
@@ -234,32 +242,32 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
 
         // --- DRAW SCENE FUNCTION (Accepts targetCTX) ---
         const drawScene = (targetCtx, isReflection = false) => {
-            // Main Image
-            if (mainImgRef.current?.complete && mainImgRef.current.naturalWidth > 0) {
+            // Main Image / Video
+            const media = mainImgRef.current;
+            if (media && (media.tagName === 'VIDEO' ? media.readyState >= 2 : (media.complete && media.naturalWidth > 0))) {
                 targetCtx.save();
                 let baseX = isVertical ? centerX : (width * 0.3);
                 let baseY = isVertical ? (height * 0.3) : centerY;
                 let drawX = baseX + config.imageX;
                 let drawY = baseY + config.imageY;
-                const img = mainImgRef.current;
+                const mWidth = media.tagName === 'VIDEO' ? media.videoWidth : media.naturalWidth;
+                const mHeight = media.tagName === 'VIDEO' ? media.videoHeight : media.naturalHeight;
                 const scale = config.imageScale || 1;
-                const w = img.naturalWidth * scale;
-                const h = img.naturalHeight * scale;
+                const w = mWidth * scale;
+                const h = mHeight * scale;
 
                 if (!isReflection) {
-                    // Slight floating motion for Main Image
                     if (config.enableFloatingObject !== false) {
                         const floatY = Math.sin(effectiveTime * 1.5) * 5;
                         drawY += floatY;
                     }
-
                     targetCtx.shadowColor = 'rgba(0,0,0,0.5)';
                     targetCtx.shadowBlur = 20;
                     targetCtx.shadowOffsetX = 10;
                     targetCtx.shadowOffsetY = 10;
                 }
 
-                targetCtx.drawImage(img, drawX - w / 2, drawY - h / 2, w, h);
+                targetCtx.drawImage(media, drawX - w / 2, drawY - h / 2, w, h);
                 targetCtx.restore();
 
                 // Song Info
@@ -302,7 +310,7 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
 
             targetCtx.translate(tx, ty);
             targetCtx.scale(config.lyricsScale, config.lyricsScale);
-            targetCtx.textAlign = config.lyricsAlign;
+            // targetCtx.textAlign = config.lyricsAlign; // Moved down per segment
             targetCtx.textBaseline = 'middle';
             targetCtx.font = `bold ${lyricSize}px ${fontFamily} `;
 
@@ -314,7 +322,6 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
             let currentScroll = scrollYRef.current;
             if (!isReflection) {
                 const diff = targetScroll - currentScroll;
-                // Smoother scroll (ease-out)
                 if (Math.abs(diff) > 0.5) currentScroll += diff * 0.08;
                 else currentScroll = targetScroll;
                 scrollYRef.current = currentScroll;
@@ -340,7 +347,8 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
                 const useCustomGlow = styles.includes('glow');
                 const glowSize = useCustomGlow ? (config.lyricsGlowSize || 20) : 0;
 
-                targetCtx.fillStyle = isActive ? activeColor : `rgba(255, 255, 255, ${opacity})`;
+                const baseColor = isActive ? activeColor : `rgba(255, 255, 255, ${opacity})`;
+                targetCtx.fillStyle = baseColor;
 
                 if (isActive && useCustomGlow && !isReflection) {
                     targetCtx.shadowColor = activeColor;
@@ -355,94 +363,77 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
                     targetCtx.translate(0, -lineY);
                 }
 
-                if (isActive && styles.includes('box')) {
-                    let maxLineWidth = 0;
-                    pos.subLines.forEach(sub => {
-                        const m = targetCtx.measureText(sub);
-                        if (m.width > maxLineWidth) maxLineWidth = m.width;
-                    });
-                    const pad = 20;
-                    const boxWidth = maxLineWidth + (pad * 2);
-                    const blockH = pos.blockHeight;
-                    const boxHeight = blockH + (pad * 2);
-                    let boxX = 0;
-                    if (config.lyricsAlign === 'center') boxX = -boxWidth / 2;
-                    else if (config.lyricsAlign === 'right') boxX = -boxWidth;
-                    else boxX = -pad;
-                    const boxY = lineY - (blockH / 2) - pad;
-
-                    targetCtx.fillStyle = activeColor;
-                    const r = 16;
-                    targetCtx.beginPath();
-                    targetCtx.roundRect(boxX, boxY, boxWidth, boxHeight, r);
-                    targetCtx.fill();
-
-                    const strokeWidth = config.lyricsBorderWidth || 0;
-                    if (strokeWidth > 0 && !isReflection) {
-                        targetCtx.lineWidth = strokeWidth;
-                        targetCtx.strokeStyle = config.lyricsBorderColor || '#000000';
-                        targetCtx.stroke();
-                    }
-                    targetCtx.fillStyle = '#000000';
-                }
-
                 const subLineHeight = lyricSize * 1.2;
-                // Box & Stroke Logic Omitted for brevity, assuming standard call
-                // (Paste previous Box/Stroke logic here if implementing full snippet)
-                // For brevity in this diff, reusing standard stroke/fill logic logic implicitly or simplified:
 
-                // --- Simple Text Render Block ---
                 pos.subLines.forEach((sub, subIndex) => {
                     const verticalOffset = (subIndex - (pos.subLines.length - 1) / 2) * subLineHeight;
                     const y = lineY + verticalOffset;
 
-                    // Border
-                    if (config.lyricsBorderWidth > 0 && !isReflection) {
-                        targetCtx.lineWidth = config.lyricsBorderWidth;
-                        targetCtx.strokeStyle = config.lyricsBorderColor || '#000000';
-                        targetCtx.lineJoin = 'round';
-                        targetCtx.miterLimit = 2;
-                        targetCtx.strokeText(sub, 0, y);
-                    }
+                    // Parse segments for highlighted text [...]
+                    const segments = sub.split(/(\[.*?\])/g).filter(s => s);
+                    
+                    // Measure full width to handle alignment
+                    const fullText = segments.map(s => s.replace(/[\[\]]/g, '')).join('');
+                    const totalW = targetCtx.measureText(fullText).width;
+                    
+                    let startX = 0;
+                    if (config.lyricsAlign === 'center') startX = -totalW / 2;
+                    else if (config.lyricsAlign === 'right') startX = -totalW;
 
-                    // Karaoke
-                    const isKaraoke = isActive && styles.includes('karaoke');
-                    if (isKaraoke) {
-                        const start = timings[i] ? timings[i].time : 0;
-                        const next = (timings[i + 1]?.time > 0.1) ? timings[i + 1].time : (start + 2.5);
-                        const kSpeed = config.karaokeSpeed || 1.0;
-                        const duration = (next - start) / kSpeed;
-                        const globalProgress = Math.min(1, Math.max(0, (effectiveTime - start) / duration));
+                    let currentX = startX;
 
-                        const totalSubCount = pos.subLines.length;
-                        const subStart = subIndex / totalSubCount;
-                        const subEnd = (subIndex + 1) / totalSubCount;
-
-                        let subProgress = 0;
-                        if (globalProgress >= subEnd) subProgress = 1;
-                        else if (globalProgress >= subStart) subProgress = (globalProgress - subStart) / (subEnd - subStart);
-
-                        const tw = targetCtx.measureText(sub).width;
-                        const fillWidth = tw * subProgress;
-                        let startX = 0;
-                        if (config.lyricsAlign === 'center') startX = -tw / 2;
-                        else if (config.lyricsAlign === 'right') startX = -tw;
+                    segments.forEach(seg => {
+                        const isHighlighted = seg.startsWith('[') && seg.endsWith(']');
+                        const cleanSeg = seg.replace(/[\[\]]/g, '');
+                        const segW = targetCtx.measureText(cleanSeg).width;
 
                         targetCtx.save();
-                        targetCtx.globalAlpha = 0.3;
-                        targetCtx.fillText(sub, 0, y);
-                        targetCtx.restore();
+                        targetCtx.fillStyle = (isActive && isHighlighted) ? (config.highlightColor || '#ffeb3b') : baseColor;
 
-                        targetCtx.save();
-                        targetCtx.beginPath();
-                        targetCtx.rect(startX, y - (subLineHeight / 2), fillWidth, subLineHeight);
-                        targetCtx.clip();
-                        targetCtx.fillStyle = activeColor;
-                        targetCtx.fillText(sub, 0, y);
+                        // Karaoke logic for segments
+                        const isKaraoke = isActive && styles.includes('karaoke');
+                        if (isKaraoke) {
+                            const start = timings[i] ? timings[i].time : 0;
+                            const next = (timings[i + 1]?.time > 0.1) ? timings[i + 1].time : (start + 2.5);
+                            const kSpeed = config.karaokeSpeed || 1.0;
+                            const duration = (next - start) / kSpeed;
+                            const globalProgress = Math.min(1, Math.max(0, (effectiveTime - start) / duration));
+
+                            const totalSubCount = pos.subLines.length;
+                            const subStart = subIndex / totalSubCount;
+                            const subEnd = (subIndex + 1) / totalSubCount;
+
+                            let subProgress = 0;
+                            if (globalProgress >= subEnd) subProgress = 1;
+                            else if (globalProgress >= subStart) subProgress = (globalProgress - subStart) / (subEnd - subStart);
+
+                            // For karaoke inside segments, we just use the subProgress
+                            targetCtx.save();
+                            targetCtx.globalAlpha = 0.3;
+                            targetCtx.fillText(cleanSeg, currentX, y);
+                            targetCtx.restore();
+
+                            targetCtx.save();
+                            targetCtx.beginPath();
+                            targetCtx.rect(currentX, y - (subLineHeight / 2), segW * subProgress, subLineHeight);
+                            targetCtx.clip();
+                            targetCtx.fillText(cleanSeg, currentX, y);
+                            targetCtx.restore();
+                        } else {
+                            // Stroke
+                            if (config.lyricsBorderWidth > 0 && !isReflection) {
+                                targetCtx.lineWidth = config.lyricsBorderWidth;
+                                targetCtx.strokeStyle = config.lyricsBorderColor || '#000000';
+                                targetCtx.lineJoin = 'round';
+                                targetCtx.miterLimit = 2;
+                                targetCtx.strokeText(cleanSeg, currentX, y);
+                            }
+                            targetCtx.fillText(cleanSeg, currentX, y);
+                        }
+                        
                         targetCtx.restore();
-                    } else {
-                        targetCtx.fillText(sub, 0, y);
-                    }
+                        currentX += segW;
+                    });
                 });
 
                 targetCtx.restore();
@@ -740,14 +731,32 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
         }
     };
 
-    // Update render on config change (removing debounce for smooth slider preview)
     useEffect(() => {
         const time = (audioRef && audioRef.current) ? audioRef.current.currentTime : 0;
         const id = requestAnimationFrame(() => render(time));
         return () => cancelAnimationFrame(id);
-    }, [config, lyrics, positionsRef.current]);
-    // ^ simplified deps. Essentially whenever layout calc changes, we re-render frame 0 (or current?)
-    // Actually we should render current... but stateless...
+    }, [config, lyrics, positionsRef.current, isPlaying]);
+
+    // Force re-render when images or videos load
+    const handleMediaLoad = () => {
+        const time = (audioRef && audioRef.current) ? audioRef.current.currentTime : 0;
+        render(time);
+    };
+
+    // Font Loading Guard
+    useEffect(() => {
+        const loadFonts = async () => {
+            if (config.fontFamily) {
+                try {
+                    await document.fonts.load(`bold 16px "${config.fontFamily}"`);
+                    handleMediaLoad();
+                } catch (e) {
+                    console.warn("Font load failed:", e);
+                }
+            }
+        };
+        loadFonts();
+    }, [config.fontFamily]);
 
     return (
         <div className="preview-area" style={{
@@ -760,8 +769,22 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
                 }}
             />
             {/* Hidden Asset Loaders */}
-            <img ref={coverImgRef} src={config.coverImage || config.mainImage} alt="asset-cover" style={{ display: 'none' }} />
-            <img ref={mainImgRef} src={config.mainImage} alt="asset-main" style={{ display: 'none' }} />
+            <div style={{ display: 'none' }}>
+                <img ref={coverImgRef} src={config.coverImage || config.mainImage} alt="asset-cover" onLoad={handleMediaLoad} />
+                
+                {/* Main Media: Image or Video */}
+                {config.mainImage?.toLowerCase().match(/\.(mp4|webm|mov)$/) ? (
+                    <video 
+                        ref={mainImgRef} 
+                        src={config.mainImage} 
+                        muted loop autoPlay 
+                        onLoadedData={handleMediaLoad}
+                        onPlay={handleMediaLoad}
+                    />
+                ) : (
+                    <img ref={mainImgRef} src={config.mainImage} alt="asset-main" onLoad={handleMediaLoad} />
+                )}
+            </div>
         </div>
     );
 }));

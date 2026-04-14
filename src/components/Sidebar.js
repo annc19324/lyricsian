@@ -39,7 +39,11 @@ const Sidebar = React.memo(({ config, setConfig, lyricsRaw, setLyricsRaw, onRese
     }
   };
 
-  const fonts = ['Inter', 'Roboto', 'Montserrat', 'Playfair Display', 'Oswald', 'Lobster', 'Dancing Script', 'Pacifico', 'Bangers', 'Orbitron'];
+  const fonts = [
+    'Montserrat', 'Playfair Display', 'Dancing Script', 'Be Vietnam Pro', 
+    'FC VIP Alpha Brights', 'Instagram Regular', 'Instagram Bold', 
+    'Instagram Sans Script', 'Instagram Sans Script Bold'
+  ];
 
   // Timings Update Logic
   const handleTimingChange = (index, value) => {
@@ -324,6 +328,15 @@ const Sidebar = React.memo(({ config, setConfig, lyricsRaw, setLyricsRaw, onRese
                 type="color"
                 value={config.activeColor}
                 onChange={(e) => setConfig({ ...config, activeColor: e.target.value })}
+                style={{ width: '100%', height: '30px', cursor: 'pointer', border: 'none', background: 'none' }}
+              />
+            </div>
+            <div className="control-row">
+              <label>Màu chữ Nhấn mạnh ([...])</label>
+              <input
+                type="color"
+                value={config.highlightColor || '#ffeb3b'}
+                onChange={(e) => setConfig({ ...config, highlightColor: e.target.value })}
                 style={{ width: '100%', height: '30px', cursor: 'pointer', border: 'none', background: 'none' }}
               />
             </div>

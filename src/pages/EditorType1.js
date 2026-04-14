@@ -53,6 +53,7 @@ const defaultConfig = {
     lyricsGlowSize: 0,      // Custom Glow Size
     lyricsBorderWidth: 0,   // Custom Border Thickness
     lyricsBorderColor: '#000000',
+    highlightColor: '#ffeb3b', // Default yellow
     backgroundEffect: 'none', // none, rain, water
     waterLevel: 0.7,        // Position of water surface (0 to 1)
     rainIntensity: 0.5,
