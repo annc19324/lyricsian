@@ -481,11 +481,20 @@ const Sidebar = React.memo(({ config, setConfig, lyricsRaw, setLyricsRaw, onRese
                 <>
                   <div className="control-row">
                     <label>Tỷ lệ ({config.imageScale}x)</label>
-                    <input
-                      type="range" min="0.1" max="1" step="0.01"
-                      value={config.imageScale}
-                      onChange={(e) => setConfig({ ...config, imageScale: parseFloat(e.target.value) })}
-                    />
+                    <div style={{ display: 'flex', gap: '5px' }}>
+                      <input
+                        type="range" min="0.1" max="20" step="0.1"
+                        value={config.imageScale}
+                        onChange={(e) => setConfig({ ...config, imageScale: parseFloat(e.target.value) })}
+                        style={{ flex: 1 }}
+                      />
+                      <input
+                        type="number" step="0.1"
+                        value={config.imageScale}
+                        onChange={(e) => setConfig({ ...config, imageScale: parseFloat(e.target.value) || 1 })}
+                        style={{ width: '70px', background: '#111', border: '1px solid #333', color: '#fff', textAlign: 'center' }}
+                      />
+                    </div>
                   </div>
                   <div className="control-row">
                     <label>Vị trí X</label>

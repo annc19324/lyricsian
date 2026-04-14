@@ -1,73 +1,51 @@
-
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 
-const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canvasRef, audioRef, timings, isPlaying, onLineClick }, ref) => {
-    // Hidden image elements for loading assets
+const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canvasRef, audioRef, timings, isPlaying, onLineClick, isExporting = false }, ref) => {
     const coverImgRef = useRef(null);
     const mainImgRef = useRef(null);
-    const positionsRef = useRef([]); // Store layout for click detection
-    const offscreenCanvasRef = useRef(document.createElement('canvas')); // Reusable offscreen canvas
-
-    // Animation State
-    const scrollYRef = useRef(0); // Current pixel offset for smooth scrolling
-
+    const foregroundCanvasRef = useRef(null);
+    const positionsRef = useRef([]);
+    const offscreenCanvasRef = useRef(document.createElement('canvas'));
+    const scrollYRef = useRef(0);
     const currentLineIndexRef = useRef(currentLineIndex);
+
     useEffect(() => { currentLineIndexRef.current = currentLineIndex; }, [currentLineIndex]);
 
-    const mustSnapRef = useRef(false);
-    const prevPlayingRef = useRef(isPlaying);
-    useEffect(() => {
-        if (isPlaying && !prevPlayingRef.current) {
-            mustSnapRef.current = true;
-        }
-        prevPlayingRef.current = isPlaying;
-    }, [isPlaying]);
+    // Media Logic (Detect if Video)
+    const isVideo = config.mainImage?.toLowerCase().match(/\.(mp4|webm|mov)$/);
+    const isGif = config.mainImage?.toLowerCase().match(/\.gif$/);
 
     const handleCanvasClick = (e) => {
-        if (!onLineClick) return;
-        const rect = canvasRef.current.getBoundingClientRect();
-
-        // Calculate Y relative to the canvas internal resolution
+        if (!onLineClick || !foregroundCanvasRef.current) return;
+        const rect = foregroundCanvasRef.current.getBoundingClientRect();
         const scaleY = config.height / rect.height;
         const clickY = (e.clientY - rect.top) * scaleY;
-
-        const { width, height } = config;
-        const centerX = width / 2;
+        const { height, lyricsY, lyricsScale } = config;
         const centerY = height / 2;
-        const isVertical = height > width;
-
+        const isVertical = height > config.width;
         let lyricsBaseY = isVertical ? (height * 0.75) : centerY;
-        let ty = lyricsBaseY + config.lyricsY;
-
-        // Current Scroll
+        let ty = lyricsBaseY + lyricsY;
         const scroll = scrollYRef.current;
-        const localY = (clickY - ty) / config.lyricsScale;
+        const localY = (clickY - ty) / lyricsScale;
         const targetCy = localY + scroll;
 
-        // Find closest line within bounds
         if (positionsRef.current.length > 0) {
             const hit = positionsRef.current.find(p => {
                 const top = p.cy - (p.blockHeight / 2);
                 const bottom = p.cy + (p.blockHeight / 2);
                 return targetCy >= top - 10 && targetCy <= bottom + 10;
             });
-
-            if (hit) {
-                onLineClick(hit.index);
-            }
+            if (hit) onLineClick(hit.index);
         }
     };
 
-    // Pre-calculate Layout Effect
+    // Pre-calculate Layout
     useEffect(() => {
-        const canvas = canvasRef.current;
+        const canvas = foregroundCanvasRef.current;
         if (!canvas) return;
-        // Access context purely for measurement (doesn't hurt performance much if done only on config change)
-        const ctx = canvas.getContext('2d', { alpha: false });
-
+        const ctx = canvas.getContext('2d');
         const { width, lyricSize, fontFamily } = config;
-        ctx.font = `bold ${lyricSize}px ${fontFamily} `;
-
+        ctx.font = `bold ${lyricSize}px ${fontFamily}`;
         const subLineHeight = lyricSize * 1.2;
         const blockGap = lyricSize * 1.0;
         const maxWidth = width * 0.8;
@@ -76,10 +54,8 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
             const lines = [];
             let currentLine = "";
             const words = text.split(' ');
-            
             for (let i = 0; i < words.length; i++) {
                 const word = words[i];
-                // Clean syntax for measurement
                 const cleanWord = word.replace(/[\[\]]/g, '');
                 const testLine = currentLine + (currentLine ? " " : "") + cleanWord;
                 const w = ctx.measureText(testLine).width;
@@ -96,697 +72,284 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
 
         const positions = [];
         let cursorY = 0;
-
         lyrics.forEach((line, i) => {
-            // Pre-process syntax highlighting markers
-            const segments = line.text.split(/(\[.*?\])/g).filter(s => s);
-            const flatText = segments.map(s => s.replace(/[\[\]]/g, '')).join('');
-            
             const explicitLines = line.text.split('\n');
             let finalSubLines = [];
             explicitLines.forEach(l => {
                 finalSubLines = finalSubLines.concat(wrapText(l, maxWidth));
             });
-
             const blockHeight = finalSubLines.length * subLineHeight;
             const cy = cursorY + (blockHeight / 2);
             positions.push({ cy, subLines: finalSubLines, blockHeight, index: i });
             cursorY += blockHeight + blockGap;
         });
-
         positionsRef.current = positions;
+    }, [lyrics, config.width, config.height, config.lyricSize, config.fontFamily, config.lyricsScale]);
 
-    }, [lyrics, config.width, config.height, config.lyricSize, config.fontFamily, config.lyricsScale, config.highlightColor]);
-
-    // Expose render method to parent
     useImperativeHandle(ref, () => ({
-        renderFrame: (time) => {
-            render(time);
-        },
+        renderFrame: (time) => render(time, true),
         getPositions: () => positionsRef.current
     }));
 
-    const render = (inputTime) => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d', { alpha: false });
+    // Camera logic calculation (Derived from time)
+    const [cameraTransform, setCameraTransform] = useState({ scale: 1, x: 0, y: 0 });
+
+    const render = (inputTime, forceToMain = false) => {
+        const baseCanvas = canvasRef.current;
+        const fgCanvas = foregroundCanvasRef.current;
+        if (!baseCanvas || !fgCanvas) return;
+
+        const baseCtx = baseCanvas.getContext('2d', { alpha: false });
+        const fgCtx = fgCanvas.getContext('2d');
         const { width, height, fontFamily, lyricSize, activeColor } = config;
 
-        // 0. Resolve Time/Index
+        // Reset canvases
+        fgCtx.clearRect(0, 0, width, height);
+
         let effectiveTime = inputTime;
-        let index = 0;
-        if (timings && timings.length > 0) {
-            const hasValidTimings = timings.some(t => t.time > 0.1);
-            if (hasValidTimings) {
-                let activeIndex = -1;
-                let maxTimeFound = -1;
-                for (let i = 0; i < timings.length; i++) {
-                    const t = timings[i];
-                    if (t.time > 0.1 && effectiveTime >= t.time) {
-                        if (t.time > maxTimeFound) {
-                            maxTimeFound = t.time;
-                            activeIndex = t.index;
-                        } else if (t.time === maxTimeFound && t.index > activeIndex) {
-                            activeIndex = t.index;
-                        }
-                    }
-                }
-                if (activeIndex !== -1) index = activeIndex;
-            }
-        }
 
-        // --- CINEMATIC CAMERA MOVEMENT (Subtle Zoom/Pan) ---
-        // We apply this transform to the entire scene (except maybe UI overlays if we had any)
-        // Ideally applies to everything including background and lyrics.
-
-        ctx.save(); // Start Global Camera Transform
-
-        const camTime = effectiveTime * 0.05; // Very slow
-        // Subtle Zoom breathing: 1.0 to 1.02
+        // Calculate Camera for Export OR for shared State (Preview)
+        const camTime = effectiveTime * 0.05;
         const camZoom = 1.0 + Math.sin(camTime) * 0.015;
-        // Subtle Pan: -10px to +10px
         const camPanX = Math.sin(camTime * 0.7) * 15;
         const camPanY = Math.cos(camTime * 0.5) * 10;
 
-        // Center zoom
-        ctx.translate(width / 2, height / 2);
-        ctx.scale(camZoom, camZoom);
-        ctx.translate(-width / 2, -height / 2);
-        ctx.translate(camPanX, camPanY);
+        // Update state for DOM sync (only if not exporting to avoid react loops)
+        if (!forceToMain && Math.abs(cameraTransform.x - camPanX) > 0.1) {
+            setCameraTransform({ scale: camZoom, x: camPanX, y: camPanY });
+        }
 
-        // 1. Clear & Background Base
-        ctx.fillStyle = '#111';
-        ctx.fillRect(-100, -100, width + 200, height + 200); // Overscan clear
-
-        const centerX = width / 2;
-        const centerY = height / 2;
-        const isVertical = height > width;
-
-        if (coverImgRef.current?.complete && coverImgRef.current.naturalWidth > 0) {
+        const applyCam = (ctx) => {
             ctx.save();
+            ctx.translate(width / 2, height / 2);
+            ctx.scale(camZoom, camZoom);
+            ctx.translate(-width / 2, -height / 2);
+            ctx.translate(camPanX, camPanY);
+        };
+
+        // --- LAYER 1: BACKGROUND (Base Canvas) ---
+        baseCtx.save();
+        if (forceToMain) applyCam(baseCtx); // Apply cam only during export
+
+        baseCtx.fillStyle = '#111';
+        baseCtx.fillRect(-100, -100, width + 200, height + 200);
+
+        if (coverImgRef.current?.complete) {
+            baseCtx.save();
             const img = coverImgRef.current;
             const ratio = Math.max(width / img.naturalWidth, height / img.naturalHeight);
-            const w = img.naturalWidth * ratio;
-            const h = img.naturalHeight * ratio;
-            const x = (width - w) / 2;
-            const y = (height - h) / 2;
-
-            // Depth of Field Simulation for Background
-            // If we want "Cinematic Blur", we blur the background layer more.
-            // Configurable or fixed style? Let's go for fixed Cinematic style.
-            ctx.filter = `blur(${config.coverBlur ?? 40}px) brightness(0.6) contrast(1.1)`; // Enhanced contrast
-
-            // Color Grading (Cool Blue Night or Warm Sunset)
-            // Let's assume Cool Blue for Water/Fog as default Cinematic
-            // We can't easily tint an image without composite.
-
-            ctx.drawImage(img, x, y, w, h);
-
-            // Color Grading Overlay - Blue Night
-            ctx.fillStyle = 'rgba(10, 20, 40, 0.4)'; // Dark Blue Tint
-            ctx.globalCompositeOperation = 'overlay';
-            ctx.fillRect(x, y, w, h);
-
-            ctx.restore();
+            const w = img.naturalWidth * ratio, h = img.naturalHeight * ratio;
+            baseCtx.filter = `blur(${config.coverBlur ?? 40}px) brightness(0.6)`;
+            baseCtx.drawImage(img, (width - w) / 2, (height - h) / 2, w, h);
+            baseCtx.restore();
         }
 
-        // --- HORIZON GLOW (Soft Light from distance) ---
-        // Only show horizon glow if there is a water surface to reflect/define it.
-        if (config.enableWater || config.backgroundEffect === 'water') {
-            ctx.save();
-            const horizonY = height * (config.waterLevel || 0.7);
-
-            const glowGrad = ctx.createLinearGradient(0, horizonY - 200, 0, horizonY + 100);
-            glowGrad.addColorStop(0, 'rgba(150, 200, 255, 0)');
-            glowGrad.addColorStop(0.8, 'rgba(180, 220, 255, 0.15)'); // Horizon line light
-            glowGrad.addColorStop(1, 'rgba(150, 200, 255, 0)');
-
-            ctx.globalCompositeOperation = 'screen'; // Additive
-            ctx.fillStyle = glowGrad;
-            ctx.fillRect(0, horizonY - 200, width, 300);
-
-            // Light Rays (Subtle)
-            const rayTime = effectiveTime * 0.2;
-            const rayX = width * 0.5 + Math.sin(rayTime) * 200;
-            const rayGrad = ctx.createRadialGradient(rayX, horizonY - 100, 0, rayX, horizonY + 200, 600);
-            rayGrad.addColorStop(0, 'rgba(255, 255, 255, 0.08)');
-            rayGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-
-            ctx.rotate(Math.PI * 0.1); // Angled rays
-            ctx.translate(100, -200);
-            ctx.fillStyle = rayGrad;
-            ctx.fillRect(-500, horizonY - 500, width + 1000, 1000); // Oversize
-
-            ctx.restore();
-        }
-
-        // --- DRAW SCENE FUNCTION (Accepts targetCTX) ---
-        const drawScene = (targetCtx, isReflection = false) => {
-            // Main Image / Video
-            const media = mainImgRef.current;
-            if (media && (media.tagName === 'VIDEO' ? media.readyState >= 2 : (media.complete && media.naturalWidth > 0))) {
-                targetCtx.save();
-                let baseX = isVertical ? centerX : (width * 0.3);
-                let baseY = isVertical ? (height * 0.3) : centerY;
-                let drawX = baseX + config.imageX;
-                let drawY = baseY + config.imageY;
-                const mWidth = media.tagName === 'VIDEO' ? media.videoWidth : media.naturalWidth;
-                const mHeight = media.tagName === 'VIDEO' ? media.videoHeight : media.naturalHeight;
-                const scale = config.imageScale || 1;
-                const w = mWidth * scale;
-                const h = mHeight * scale;
-
-                if (!isReflection) {
-                    if (config.enableFloatingObject !== false) {
-                        const floatY = Math.sin(effectiveTime * 1.5) * 5;
-                        drawY += floatY;
-                    }
-                    targetCtx.shadowColor = 'rgba(0,0,0,0.5)';
-                    targetCtx.shadowBlur = 20;
-                    targetCtx.shadowOffsetX = 10;
-                    targetCtx.shadowOffsetY = 10;
-                }
-
-                targetCtx.drawImage(media, drawX - w / 2, drawY - h / 2, w, h);
-                targetCtx.restore();
-
-                // Song Info
-                targetCtx.save();
-                targetCtx.textAlign = isVertical ? 'center' : 'left';
-                const textX = isVertical ? drawX : (drawX - w / 2);
-                let baseTextY = isVertical ? (drawY + h / 2 + 40) : (drawY + h / 2 + 50);
-
-                if (!isReflection) {
-                    targetCtx.shadowColor = 'rgba(0,0,0,0.8)';
-                    targetCtx.shadowBlur = 4;
-                    targetCtx.shadowOffsetX = 2;
-                    targetCtx.shadowOffsetY = 2;
-                }
-
-                targetCtx.font = `bold ${config.songSize || 40}px ${fontFamily} `;
-                targetCtx.fillStyle = config.songColor || 'white';
-                targetCtx.fillText(config.songName || '', textX + (config.songX || 0), baseTextY + (config.songY || 0));
-
-                const artistBaseY = baseTextY + 45;
-                targetCtx.font = `${config.artistSize || 30}px ${fontFamily} `;
-                targetCtx.fillStyle = config.artistColor || '#ddd';
-                targetCtx.fillText(config.artistName || '', textX + (config.artistX || 0), artistBaseY + (config.artistY || 0));
-
-                if (config.channelName) {
-                    const channelBaseY = artistBaseY + 35;
-                    targetCtx.font = `italic ${config.channelSize || 20}px ${fontFamily} `;
-                    targetCtx.fillStyle = config.channelColor || 'rgba(255,255,255,0.6)';
-                    targetCtx.fillText(config.channelName, textX + (config.channelX || 0), channelBaseY + (config.channelY || 0));
-                }
-                targetCtx.restore();
-            }
-
-            // Lyrics
-            targetCtx.save();
-            let lyricsBaseX = isVertical ? centerX : (width * 0.7);
-            let lyricsBaseY = isVertical ? (height * 0.75) : centerY;
-            let tx = lyricsBaseX + config.lyricsX;
-            let ty = lyricsBaseY + config.lyricsY;
-
-            targetCtx.translate(tx, ty);
-            targetCtx.scale(config.lyricsScale, config.lyricsScale);
-            // targetCtx.textAlign = config.lyricsAlign; // Moved down per segment
-            targetCtx.textBaseline = 'middle';
-            targetCtx.font = `bold ${lyricSize}px ${fontFamily} `;
-
-            const positions = positionsRef.current;
-            const activePos = positions[index];
-            const targetScroll = activePos ? activePos.cy : 0;
-
-            // Scroll Logic
-            let currentScroll = scrollYRef.current;
-            if (!isReflection) {
-                const diff = targetScroll - currentScroll;
-                if (Math.abs(diff) > 0.5) currentScroll += diff * 0.08;
-                else currentScroll = targetScroll;
-                scrollYRef.current = currentScroll;
-            }
-
-            positions.forEach((pos, i) => {
-                const lineY = pos.cy - currentScroll;
-                const maxAbove = config.maxLinesAbove ?? 2;
-                const maxBelow = config.maxLinesBelow ?? 2;
-                if (i < index - maxAbove || i > index + maxBelow) return;
-
-                const isActive = (i === index);
-                let opacity = 0.4;
-                if (isActive) opacity = 1;
-                else {
-                    const dist = Math.abs(index - i);
-                    opacity = Math.max(0.1, 0.4 - (dist * 0.05));
-                }
-                if (isReflection) opacity *= 0.7;
-
-                targetCtx.save();
-                let styles = config.highlightStyles || [];
-                const useCustomGlow = styles.includes('glow');
-                const glowSize = useCustomGlow ? (config.lyricsGlowSize || 20) : 0;
-
-                const baseColor = isActive ? activeColor : `rgba(255, 255, 255, ${opacity})`;
-                targetCtx.fillStyle = baseColor;
-
-                if (isActive && useCustomGlow && !isReflection) {
-                    targetCtx.shadowColor = activeColor;
-                    targetCtx.shadowBlur = glowSize;
-                } else {
-                    targetCtx.shadowBlur = 0;
-                }
-
-                if (isActive && styles.includes('scale')) {
-                    targetCtx.translate(0, lineY);
-                    targetCtx.scale(1.2, 1.2);
-                    targetCtx.translate(0, -lineY);
-                }
-
-                const subLineHeight = lyricSize * 1.2;
-
-                pos.subLines.forEach((sub, subIndex) => {
-                    const verticalOffset = (subIndex - (pos.subLines.length - 1) / 2) * subLineHeight;
-                    const y = lineY + verticalOffset;
-
-                    // Parse segments for highlighted text [...]
-                    const segments = sub.split(/(\[.*?\])/g).filter(s => s);
-                    
-                    // Measure full width to handle alignment
-                    const fullText = segments.map(s => s.replace(/[\[\]]/g, '')).join('');
-                    const totalW = targetCtx.measureText(fullText).width;
-                    
-                    let startX = 0;
-                    if (config.lyricsAlign === 'center') startX = -totalW / 2;
-                    else if (config.lyricsAlign === 'right') startX = -totalW;
-
-                    let currentX = startX;
-
-                    segments.forEach(seg => {
-                        const isHighlighted = seg.startsWith('[') && seg.endsWith(']');
-                        const cleanSeg = seg.replace(/[\[\]]/g, '');
-                        const segW = targetCtx.measureText(cleanSeg).width;
-
-                        targetCtx.save();
-                        targetCtx.fillStyle = (isActive && isHighlighted) ? (config.highlightColor || '#ffeb3b') : baseColor;
-
-                        // Karaoke logic for segments
-                        const isKaraoke = isActive && styles.includes('karaoke');
-                        if (isKaraoke) {
-                            const start = timings[i] ? timings[i].time : 0;
-                            const next = (timings[i + 1]?.time > 0.1) ? timings[i + 1].time : (start + 2.5);
-                            const kSpeed = config.karaokeSpeed || 1.0;
-                            const duration = (next - start) / kSpeed;
-                            const globalProgress = Math.min(1, Math.max(0, (effectiveTime - start) / duration));
-
-                            const totalSubCount = pos.subLines.length;
-                            const subStart = subIndex / totalSubCount;
-                            const subEnd = (subIndex + 1) / totalSubCount;
-
-                            let subProgress = 0;
-                            if (globalProgress >= subEnd) subProgress = 1;
-                            else if (globalProgress >= subStart) subProgress = (globalProgress - subStart) / (subEnd - subStart);
-
-                            // For karaoke inside segments, we just use the subProgress
-                            targetCtx.save();
-                            targetCtx.globalAlpha = 0.3;
-                            targetCtx.fillText(cleanSeg, currentX, y);
-                            targetCtx.restore();
-
-                            targetCtx.save();
-                            targetCtx.beginPath();
-                            targetCtx.rect(currentX, y - (subLineHeight / 2), segW * subProgress, subLineHeight);
-                            targetCtx.clip();
-                            targetCtx.fillText(cleanSeg, currentX, y);
-                            targetCtx.restore();
-                        } else {
-                            // Stroke
-                            if (config.lyricsBorderWidth > 0 && !isReflection) {
-                                targetCtx.lineWidth = config.lyricsBorderWidth;
-                                targetCtx.strokeStyle = config.lyricsBorderColor || '#000000';
-                                targetCtx.lineJoin = 'round';
-                                targetCtx.miterLimit = 2;
-                                targetCtx.strokeText(cleanSeg, currentX, y);
-                            }
-                            targetCtx.fillText(cleanSeg, currentX, y);
-                        }
-                        
-                        targetCtx.restore();
-                        currentX += segW;
-                    });
-                });
-
-                targetCtx.restore();
-            });
-            targetCtx.restore();
-        };
-
-        // 2. Draw Main Scene
-        drawScene(ctx, false);
-
-        // --- FLOATING MICRO PARTICLES (Atmosphere) ---
-        if (config.enableGlobalParticles !== false) {
-            const pCount = config.particleCount || 80;
-            const pSpeed = config.particleSpeed || 0.5;
-            const pTime = effectiveTime * pSpeed;
-            ctx.save();
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-            ctx.shadowColor = 'white';
-            ctx.shadowBlur = 2;
-
-            for (let i = 0; i < pCount; i++) {
-                const seed = i * 4444;
-                const rnd = (n) => Math.abs(Math.sin(seed + n));
-
-                const xBase = rnd(1) * width;
-                const yBase = rnd(2) * height;
-
-                // Drifting Logic
-                const x = (xBase + Math.sin(pTime + i) * 30) % width;
-                const y = (yBase + Math.cos(pTime + i * 0.5) * 30) % height;
-                const size = rnd(3) * 1.5 + 0.5; // Micro size
-
-                // Fade in/out
-                const alpha = (0.2 + 0.8 * Math.sin(pTime * 2 + i)) * 0.5;
-
-                ctx.globalAlpha = alpha;
-                ctx.beginPath();
-                ctx.arc(x, y, size, 0, Math.PI * 2);
-                ctx.fill();
-            }
-            ctx.restore();
-        }
-
-        // 5. Cinematic Water (Enhanced Reflection)
         if (config.enableWater || config.backgroundEffect === 'water') {
             const waterY = height * (config.waterLevel || 0.7);
-            const waterH = height - waterY;
+            const grad = baseCtx.createLinearGradient(0, waterY - 200, 0, waterY + 100);
+            grad.addColorStop(0.8, 'rgba(180, 220, 255, 0.15)');
+            baseCtx.fillStyle = grad;
+            baseCtx.fillRect(0, waterY - 200, width, 300);
+        }
 
-            let offC = offscreenCanvasRef.current;
-            if (offC.width !== width || offC.height !== height) {
-                offC.width = width;
-                offC.height = height;
-            }
-            const offCtx = offC.getContext('2d', { alpha: false });
+        // --- LAYER 2: MEDIA (If Export Mode) ---
+        const media = mainImgRef.current;
+        const isVertical = height > width;
+        const mWidth = media ? (media.videoWidth || media.naturalWidth || 0) : 0;
+        const mHeight = media ? (media.videoHeight || media.naturalHeight || 0) : 0;
+        
+        // Normalization: 1.0x scale = canvas width
+        const baseScale = mWidth > 0 ? (width / mWidth) : 1;
+        const normalizedScale = baseScale * (config.imageScale || 1);
+        const w = mWidth * normalizedScale, h = mHeight * normalizedScale;
+        
+        const baseX = isVertical ? (width / 2) : (width * 0.3);
+        const baseY = isVertical ? (height * 0.3) : (height / 2);
+        const dx = baseX + config.imageX, dy = baseY + config.imageY;
+
+        if (forceToMain && media && (media.tagName === 'VIDEO' ? media.readyState >= 2 : (media.complete && mWidth > 0))) {
+            baseCtx.save();
+            baseCtx.drawImage(media, dx - w / 2, dy - h / 2, w, h);
+            baseCtx.restore();
+        }
+        baseCtx.restore(); // Finish Base
+
+        // --- LAYER 3: FOREGROUND (FG Canvas) ---
+        fgCtx.save();
+        if (forceToMain) applyCam(fgCtx);
+
+        // Metadata
+        if (media && (media.tagName === 'VIDEO' ? media.readyState >= 2 : (media.complete && mWidth > 0))) {
+            fgCtx.save();
+            fgCtx.textAlign = isVertical ? 'center' : 'left';
+            const tx = isVertical ? dx : (dx - w / 2);
+            const ty = isVertical ? (dy + h / 2 + 40) : (dy + h / 2 + 50);
+            fgCtx.font = `bold ${config.songSize || 40}px ${fontFamily}`;
+            fgCtx.fillStyle = config.songColor || 'white';
+            fgCtx.shadowColor = 'rgba(0,0,0,0.8)';
+            fgCtx.shadowBlur = 4;
+            fgCtx.fillText(config.songName || '', tx + (config.songX || 0), ty + (config.songY || 0));
             
-            // Clear offscreen because we reuse it
-            offCtx.clearRect(0, 0, width, height);
-
-            // Draw reflection flipped
-            offCtx.save();
-            offCtx.translate(0, 2 * waterY);
-            offCtx.scale(1, -1);
-            drawScene(offCtx, true);
-            offCtx.restore();
-
-            ctx.save();
-            ctx.beginPath();
-            ctx.rect(0, waterY, width, height - waterY);
-            ctx.clip();
-
-
-            // -- Cinematic Water Rendering (Scanline + Distortion) --
-            const waveBaseSpeed = config.waveSpeed || 1;
-            const waveBaseAmp = config.waveAmplitude || 10;
-            const sliceHeight = 2;
-
-            for (let y = waterY; y < height; y += sliceHeight) {
-                const depth = (y - waterY) / waterH;
-                const amp = waveBaseAmp * (0.2 + 0.8 * depth);
-                const realTime = effectiveTime * waveBaseSpeed;
-
-                // Complex Wave function
-                const w1 = Math.sin(y * 0.02 + realTime);
-                const w2 = Math.sin(y * 0.05 + realTime * 2.5) * 0.5;
-                const w3 = Math.sin(y * 0.1 + realTime * 0.5) * 0.2;
-
-                const xShift = (w1 + w2 + w3) * amp;
-
-                // Draw slice
-                // Add blur to reflection (fake depth)
-                // We can simulate blur by drawing multiple times with offset or just reducing opacity?
-                // Real blur needs filter.
-                // offCtx.filter = `blur(${depth * 4}px)`; // Can't change offCtx per line easily.
-
-                ctx.globalAlpha = 0.8 - (depth * 0.4); // Fade out at bottom
-                ctx.drawImage(offC, 0, y, width, sliceHeight, xShift, y, width, sliceHeight);
-            }
-
-            // Water Lighting Overlay
-            const grad = ctx.createLinearGradient(0, waterY, 0, height);
-            grad.addColorStop(0, `rgba(150, 180, 255, ${0.15})`); // Horizon highlight
-            grad.addColorStop(0.3, `rgba(0, 30, 60, ${0.3})`);
-            grad.addColorStop(0.8, `rgba(0, 5, 20, ${0.7})`); // Deep dark
-
-            ctx.fillStyle = grad;
-            ctx.globalCompositeOperation = 'source-over';
-            ctx.fillRect(0, waterY, width, height - waterY); // Fix: Add fillRect
-
-            ctx.restore();
+            const artistY = ty + 45;
+            fgCtx.font = `${config.artistSize || 30}px ${fontFamily}`;
+            fgCtx.fillStyle = config.artistColor || '#ddd';
+            fgCtx.fillText(config.artistName || '', tx + (config.artistX || 0), artistY + (config.artistY || 0));
+            fgCtx.restore();
         }
 
-        // 6. Cinematic Fog (Full Screen - Drifting)
-        if (config.enableFog || config.backgroundEffect === 'fog') {
-            const intensity = config.fogIntensity || 0.5;
-            const speed = (config.fogSpeed || 1) * 0.5;
+        // Lyrics
+        let lbX = isVertical ? (width / 2) : (width * 0.7);
+        let lbY = isVertical ? (height * 0.75) : (height / 2);
+        fgCtx.save();
+        fgCtx.translate(lbX + config.lyricsX, lbY + config.lyricsY);
+        fgCtx.scale(config.lyricsScale, config.lyricsScale);
+        fgCtx.textBaseline = 'middle';
+        fgCtx.font = `bold ${lyricSize}px ${fontFamily}`;
 
-            ctx.save();
-            const t = effectiveTime * speed;
-
-            // Full Screen Haze (Base Layer)
-            ctx.fillStyle = `rgba(200, 220, 255, ${0.1 * intensity})`;
-            ctx.fillRect(0, 0, width, height);
-
-            // Drifting Mist Clouds (Mid Layer)
-            const count = 15;
-            ctx.globalCompositeOperation = 'screen'; // Additive
-
-            for (let i = 0; i < count; i++) {
-                const seed = i * 2222;
-                const rnd = (n) => Math.abs(Math.sin(seed + n));
-
-                const size = (width * 0.6) + rnd(1) * width * 0.4; // Large blobs
-                const xBase = rnd(2) * width;
-                const yBase = rnd(3) * height; // All over Y axis
-
-                // Continuous Drift Logic
-                const driftSpeed = 50 * (1 + rnd(4));
-                const x = (xBase + t * driftSpeed) % (width + size * 2) - size;
-                const y = (yBase + Math.sin(t * 0.5 + i) * 20) % (height + size) - size / 2;
-
-                const grad = ctx.createRadialGradient(x, y, 0, x, y, size);
-                grad.addColorStop(0, `rgba(220, 240, 255, ${0.08 * intensity})`);
-                grad.addColorStop(1, `rgba(220, 240, 255, 0)`);
-
-                ctx.fillStyle = grad;
-                ctx.beginPath();
-                ctx.arc(x, y, size, 0, Math.PI * 2);
-                ctx.fill();
+        // Find index
+        let index = 0;
+        if (timings?.length > 0) {
+            for (let i = 0; i < timings.length; i++) {
+                if (timings[i].time > 0.1 && effectiveTime >= timings[i].time) index = timings[i].index;
             }
-
-            ctx.restore();
         }
 
-        ctx.restore(); // End Camera movement transform
+        const pos = positionsRef.current;
+        const currentScroll = pos[index]?.cy || 0;
+        scrollYRef.current += (currentScroll - scrollYRef.current) * 0.1;
 
-
-        // 6. Realistic Rain Effect (Multi-Layer + Splash Physics)
-        if (config.backgroundEffect === 'rain') {
-            const intensity = config.rainIntensity || 0.5;
-            const seedTime = effectiveTime; // Use time for determinism
-
-            // Slow Motion Burst logic:
-            // Use time noise to determine "Slow Mo Zones"
-            // sin(time * 0.2) > 0.8 ?
-            const isSlowMo = (Math.sin(effectiveTime * 0.5) > 0.6); // Occasional slow mo
-            const timeScale = isSlowMo ? 0.3 : 1.0;
-            // Note: Mixing procedural time * timeScale is tricky for position continuity.
-            // P = V * T. If V changes, P jumps.
-            // Correct approach: P = Integral(V dt). 
-            // Without integration state, we can't do variable speed smoothly in a purely time-function render.
-            // Fallback: Constant speed for rain layers, but vary "Rain Intensity" visually?
-            // Or just stick to base speed config.
-
-            const baseSpeed = (config.rainSpeed || 1) * 2.0;
-
-            const layers = [
-                { id: 'bg', count: 0.5, speed: 0.8 * baseSpeed, size: 0.5, opacity: 0.3 },
-                { id: 'mid', count: 0.3, speed: 1.2 * baseSpeed, size: 1.0, opacity: 0.6 },
-                { id: 'fg', count: 0.2, speed: 1.6 * baseSpeed, size: 2.0, opacity: 0.8 }
-            ];
-
-            const totalCount = config.particleCount || 200;
-            const waterY = (config.backgroundEffect === 'water') ? height * (config.waterLevel || 0.7) : height;
-            const hasWater = (config.backgroundEffect === 'water');
-            const wind = 30; // Wind pixels x-shift
-
-            ctx.save();
-            ctx.lineCap = 'round';
-
-            // Render Layers
-            layers.forEach(layer => {
-                const count = totalCount * layer.count * intensity * 5;
-                ctx.beginPath();
-                ctx.lineWidth = layer.size;
-                ctx.strokeStyle = `rgba(230, 240, 255, ${layer.opacity})`;
-
-                for (let i = 0; i < count; i++) {
-                    const seed = i * 12345 + layer.speed * 99;
-                    const rnd = (n) => {
-                        const x = Math.sin(seed + n * 12.34);
-                        return x - Math.floor(x); // 0..1ish
-                    };
-
-                    // X Position
-                    let x = (rnd(1) * width * 1.5) - (width * 0.25); // padded for wind
-
-                    // Y Position (Time Based)
-                    // y = (time * speed + offset) % region
-                    const regionH = height + 100;
-                    const timeOffset = rnd(2) * regionH;
-                    let speed = layer.speed * 20 * (1 + rnd(3) * 0.2); // variation
-
-
-
-                    const rawY = (effectiveTime * 20 * speed + timeOffset);
-                    let y = (rawY % regionH) - 100; // Screen Y
-
-                    // Wind Shear
-                    x += (y / height) * wind;
-
-                    // Length
-                    const len = 20 * layer.size * (1 + rnd(4)) * (isSlowMo ? 1.5 : 1.0);
-
-                    // Collision with Water
-                    if (hasWater && y > waterY) {
-                        // Drop has passed water.
-                        // Check if it *just* passed? 
-                        // Raw delta check:
-                        const cycleIndex = Math.floor(rawY / regionH);
-                        // If we are strictly relying on frame-check, splashes might be missed.
-                        // VISUAL TRICK: Use specific hash to spawn *static* splashes at water level 
-                        // that "blink" based on time.
-
-                        const splashSeed = Math.floor(rawY / regionH) + i;
-                        // Is this splash active *now*?
-                        const hitTime = (cycleIndex * regionH + (waterY + 100 - timeOffset)) / (20 * speed);
-                        const diff = effectiveTime - hitTime;
-
-                        if (Math.abs(diff) < 0.2) { // Splash visible for 0.2s
-                            // Draw Splash Ripple
-                            const p = diff / 0.2; // 0 to 1
-                            const radius = (10 + rnd(5) * 20) * layer.size * p;
-                            const alpha = (1 - p) * layer.opacity;
-
-                            // Must use separate path for arcs?
-                            // Actually we can just draw them at end of loop?
-                            // Let's store splashes to draw after lines.
-                        }
-                    } else {
-                        // Regular Drop
-                        ctx.moveTo(x, y);
-                        ctx.lineTo(x - (wind / height) * len * 0.5, y + len);
-                    }
-                }
-                ctx.stroke();
+        pos.forEach((p, i) => {
+            const lineY = p.cy - scrollYRef.current;
+            if (i < index - (config.maxLinesAbove ?? 2) || i > index + (config.maxLinesBelow ?? 2)) return;
+            const active = (i === index);
+            fgCtx.save();
+            fgCtx.fillStyle = active ? activeColor : `rgba(255,255,255,${Math.max(0.1, 0.4 - Math.abs(index - i) * 0.05)})`;
+            p.subLines.forEach((sub, si) => {
+                const y = lineY + (si - (p.subLines.length - 1) / 2) * (lyricSize * 1.2);
+                const segments = sub.split(/(\[.*?\])/g).filter(s => s);
+                const fullW = fgCtx.measureText(segments.map(s => s.replace(/[\[\]]/g, '')).join('')).width;
+                let curX = config.lyricsAlign === 'center' ? -fullW / 2 : (config.lyricsAlign === 'right' ? -fullW : 0);
+                segments.forEach(seg => {
+                    const isHigh = seg.startsWith('[') && seg.endsWith(']');
+                    const clean = seg.replace(/[\[\]]/g, '');
+                    const sw = fgCtx.measureText(clean).width;
+                    fgCtx.save();
+                    if (active && isHigh) fgCtx.fillStyle = config.highlightColor;
+                    fgCtx.fillText(clean, curX, y);
+                    fgCtx.restore();
+                    curX += sw;
+                });
             });
+            fgCtx.restore();
+        });
+        fgCtx.restore();
 
-            // -- PARTICLE SYSTEM FOR SPLASHES (Non-Deterministic Visuals for "Wow" factor) --
-            // Since we can't easily integrate physics in a seekable renderer without pre-calc,
-            // we use a "Visual Cloud" of splashes near the water line.
-
-            if (hasWater) {
-                const splashCount = 20 * intensity;
-                ctx.fillStyle = `rgba(200, 230, 255, 0.5)`;
-                ctx.beginPath();
-
-                for (let s = 0; s < splashCount; s++) {
-                    // Random splashes appearing
-                    const seed = Math.floor(effectiveTime * 10) + s; // Changes 10 times/sec
-                    const rnd = (n) => Math.abs(Math.sin(seed * n));
-
-                    if (rnd(1) > 0.5) continue; // Flicker
-
-                    const sx = rnd(2) * width;
-                    const sy = waterY + (rnd(3) - 0.5) * 5; // Near surface
-
-                    // Jump particles
-                    const pCount = 3 + Math.floor(rnd(4) * 5);
-                    for (let p = 0; p < pCount; p++) {
-                        const px = sx + (rnd(p * 10) * 20 - 10);
-                        const py = sy - rnd(p * 20) * 30; // Upwards
-                        const size = rnd(p) * 2;
-                        ctx.moveTo(px, py);
-                        ctx.arc(px, py, size, 0, Math.PI * 2);
-                    }
-
-                    // Ripple Ring
-                    ctx.moveTo(sx + 20, sy);
-                    ctx.ellipse(sx, sy, 20 * rnd(5), 5 * rnd(5), 0, 0, Math.PI * 2);
-                }
-                ctx.fill();
+        // Particles
+        if (config.enableGlobalParticles !== false) {
+            fgCtx.save();
+            const pTime = effectiveTime * 0.5;
+            fgCtx.fillStyle = 'rgba(255,255,255,0.5)';
+            for (let i = 0; i < 50; i++) {
+                const sx = (Math.abs(Math.sin(i * 4444)) * width + Math.sin(pTime + i) * 20) % width;
+                const y = (Math.abs(Math.cos(i * 4444)) * height + Math.cos(pTime + i) * 20) % height;
+                fgCtx.beginPath(); fgCtx.arc(sx, y, 1, 0, Math.PI * 2); fgCtx.fill();
             }
-
-            ctx.restore();
+            fgCtx.restore();
         }
+
+        if (forceToMain) baseCtx.drawImage(fgCanvas, 0, 0);
+        fgCtx.restore();
     };
 
     useEffect(() => {
-        const time = (audioRef && audioRef.current) ? audioRef.current.currentTime : 0;
-        const id = requestAnimationFrame(() => render(time));
-        return () => cancelAnimationFrame(id);
-    }, [config, lyrics, positionsRef.current, isPlaying]);
+        const tick = () => { if (!isExporting) render(audioRef.current?.currentTime || 0); requestAnimationFrame(tick); };
+        const id = requestAnimationFrame(tick); return () => cancelAnimationFrame(id);
+    }, [config, isExporting, lyrics]);
 
-    // Force re-render when images or videos load
-    const handleMediaLoad = () => {
-        const time = (audioRef && audioRef.current) ? audioRef.current.currentTime : 0;
-        render(time);
-    };
+    // Scale for Media DOM
+    const [containerScale, setContainerScale] = useState(1);
+    const containerRef = useRef(null);
+    const wrapperRef = useRef(null);
 
-    // Font Loading Guard
     useEffect(() => {
-        const loadFonts = async () => {
-            if (config.fontFamily) {
-                try {
-                    await document.fonts.load(`bold 16px "${config.fontFamily}"`);
-                    handleMediaLoad();
-                } catch (e) {
-                    console.warn("Font load failed:", e);
-                }
+        const updateScale = () => {
+            if (wrapperRef.current) {
+                const rect = wrapperRef.current.getBoundingClientRect();
+                setContainerScale(rect.width / config.width);
             }
         };
-        loadFonts();
-    }, [config.fontFamily]);
+        updateScale();
+        const obs = new ResizeObserver(updateScale);
+        if (wrapperRef.current) obs.observe(wrapperRef.current);
+        window.addEventListener('resize', updateScale);
+        return () => {
+            obs.disconnect();
+            window.removeEventListener('resize', updateScale);
+        };
+    }, [config.width, config.height]);
+
+    const isVertical = config.height > config.width;
+    
+    // finalScale is now simplified because width is explicitly set to config.width in DOM
+    const finalScale = (config.imageScale || 1) * containerScale;
+
+    const mediaStyle = {
+        position: 'absolute',
+        left: isVertical ? '50%' : '30%',
+        top: isVertical ? '30%' : '50%',
+        transform: `translate(-50%, -50%) translate(${config.imageX * containerScale}px, ${config.imageY * containerScale}px) scale(${finalScale})`,
+        zIndex: 5,
+        pointerEvents: 'none',
+        display: isExporting ? 'none' : 'block'
+    };
+
+    const sharedCameraStyle = {
+        position: 'relative',
+        width: '100%',
+        height: '100%',
+        maxWidth: isExporting ? 'none' : '85%',
+        maxHeight: isExporting ? 'none' : '85%',
+        aspectRatio: `${config.width} / ${config.height}`,
+        transform: isExporting ? 'none' : `scale(${cameraTransform.scale}) translate(${cameraTransform.x}px, ${cameraTransform.y}px)`,
+        transformOrigin: 'center',
+        transition: 'transform 0.1s linear',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+    };
 
     return (
-        <div className="preview-area" style={{
-            display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#000', overflow: 'hidden'
+        <div className="preview-area" ref={containerRef} style={{
+            display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#000', overflow: 'hidden', position: 'relative'
         }}>
-            <canvas ref={canvasRef} onClick={handleCanvasClick} width={config.width} height={config.height}
-                style={{
-                    maxWidth: '85%', maxHeight: '85%', objectFit: 'contain',
-                    border: '1px solid #333', boxShadow: '0 0 50px rgba(0,0,0,0.8)', cursor: 'pointer'
-                }}
-            />
-            {/* Hidden Asset Loaders */}
-            <div style={{ display: 'none' }}>
-                <img ref={coverImgRef} src={config.coverImage || config.mainImage} alt="asset-cover" onLoad={handleMediaLoad} />
+            <div ref={wrapperRef} style={sharedCameraStyle}>
+                <canvas ref={canvasRef} width={config.width} height={config.height} style={{ position: 'absolute', zIndex: 1, height: '100%', width: '100%', objectFit: 'contain', border: '1px solid #333', boxShadow: '0 0 50px rgba(0,0,0,0.8)' }} />
                 
-                {/* Main Media: Image or Video */}
-                {config.mainImage?.toLowerCase().match(/\.(mp4|webm|mov)$/) ? (
-                    <video 
-                        ref={mainImgRef} 
-                        src={config.mainImage} 
-                        muted loop autoPlay 
-                        onLoadedData={handleMediaLoad}
-                        onPlay={handleMediaLoad}
-                    />
+                {!isExporting && (
+                    <div style={mediaStyle}>
+                        {isVideo ? (
+                            <video src={config.mainImage} muted loop autoPlay playsInline 
+                                style={{ display: 'block', width: config.width + 'px', height: 'auto' }} />
+                        ) : (
+                            <img src={config.mainImage} alt="" 
+                                style={{ display: 'block', width: config.width + 'px', height: 'auto' }} />
+                        )}
+                    </div>
+                )}
+
+                <canvas ref={foregroundCanvasRef} width={config.width} height={config.height} onClick={handleCanvasClick} style={{ position: 'absolute', zIndex: 10, height: '100%', width: '100%', objectFit: 'contain', cursor: 'pointer' }} />
+            </div>
+            <img ref={coverImgRef} src={config.coverImage || config.mainImage} alt="" style={{ display: 'none' }} />
+            <div style={{ display: 'none' }}>
+                {isVideo ? (
+                    <video ref={mainImgRef} src={config.mainImage} muted loop autoPlay playsInline />
                 ) : (
-                    <img ref={mainImgRef} src={config.mainImage} alt="asset-main" onLoad={handleMediaLoad} />
+                    <img ref={mainImgRef} src={config.mainImage} alt="" />
                 )}
             </div>
         </div>
     );
 }));
+
 
 export default Preview;

@@ -914,6 +914,7 @@ const EditorType1 = () => {
                 timings={timings}
                 isPlaying={isPlaying} // Now just state, loop drives it
                 onLineClick={handleLineClick}
+                isExporting={isExporting}
             />
 
             <Timeline
