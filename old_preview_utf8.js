@@ -1,7 +1,7 @@
-
+﻿
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 
-const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canvasRef, audioRef, timings, isPlaying, onLineClick, isExporting = false }, ref) => {
+const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canvasRef, audioRef, timings, isPlaying, onLineClick }, ref) => {
     // Hidden image elements for loading assets
     const coverImgRef = useRef(null);
     const mainImgRef = useRef(null);
@@ -522,6 +522,12 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
 
                 const xShift = (w1 + w2 + w3) * amp;
 
+                // Draw slice
+                // Add blur to reflection (fake depth)
+                // We can simulate blur by drawing multiple times with offset or just reducing opacity?
+                // Real blur needs filter.
+                // offCtx.filter = `blur(${depth * 4}px)`; // Can't change offCtx per line easily.
+
                 ctx.globalAlpha = 0.8 - (depth * 0.4); // Fade out at bottom
                 ctx.drawImage(offC, 0, y, width, sliceHeight, xShift, y, width, sliceHeight);
             }
@@ -587,9 +593,20 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
         // 6. Realistic Rain Effect (Multi-Layer + Splash Physics)
         if (config.backgroundEffect === 'rain') {
             const intensity = config.rainIntensity || 0.5;
-            
+            const seedTime = effectiveTime; // Use time for determinism
+
+            // Slow Motion Burst logic:
+            // Use time noise to determine "Slow Mo Zones"
+            // sin(time * 0.2) > 0.8 ?
             const isSlowMo = (Math.sin(effectiveTime * 0.5) > 0.6); // Occasional slow mo
-            
+            const timeScale = isSlowMo ? 0.3 : 1.0;
+            // Note: Mixing procedural time * timeScale is tricky for position continuity.
+            // P = V * T. If V changes, P jumps.
+            // Correct approach: P = Integral(V dt). 
+            // Without integration state, we can't do variable speed smoothly in a purely time-function render.
+            // Fallback: Constant speed for rain layers, but vary "Rain Intensity" visually?
+            // Or just stick to base speed config.
+
             const baseSpeed = (config.rainSpeed || 1) * 2.0;
 
             const layers = [
@@ -624,9 +641,12 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
                     let x = (rnd(1) * width * 1.5) - (width * 0.25); // padded for wind
 
                     // Y Position (Time Based)
+                    // y = (time * speed + offset) % region
                     const regionH = height + 100;
                     const timeOffset = rnd(2) * regionH;
                     let speed = layer.speed * 20 * (1 + rnd(3) * 0.2); // variation
+
+
 
                     const rawY = (effectiveTime * 20 * speed + timeOffset);
                     let y = (rawY % regionH) - 100; // Screen Y
@@ -637,37 +657,70 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
                     // Length
                     const len = 20 * layer.size * (1 + rnd(4)) * (isSlowMo ? 1.5 : 1.0);
 
-                    // Regular Drop (Splashes simplified here for performance in restoration)
-                    ctx.moveTo(x, y);
-                    ctx.lineTo(x - (wind / height) * len * 0.5, y + len);
+                    // Collision with Water
+                    if (hasWater && y > waterY) {
+                        // Drop has passed water.
+                        // Check if it *just* passed? 
+                        // Raw delta check:
+                        const cycleIndex = Math.floor(rawY / regionH);
+                        // If we are strictly relying on frame-check, splashes might be missed.
+                        // VISUAL TRICK: Use specific hash to spawn *static* splashes at water level 
+                        // that "blink" based on time.
+
+                        const splashSeed = Math.floor(rawY / regionH) + i;
+                        // Is this splash active *now*?
+                        const hitTime = (cycleIndex * regionH + (waterY + 100 - timeOffset)) / (20 * speed);
+                        const diff = effectiveTime - hitTime;
+
+                        if (Math.abs(diff) < 0.2) { // Splash visible for 0.2s
+                            // Draw Splash Ripple
+                            const p = diff / 0.2; // 0 to 1
+                            const radius = (10 + rnd(5) * 20) * layer.size * p;
+                            const alpha = (1 - p) * layer.opacity;
+
+                            // Must use separate path for arcs?
+                            // Actually we can just draw them at end of loop?
+                            // Let's store splashes to draw after lines.
+                        }
+                    } else {
+                        // Regular Drop
+                        ctx.moveTo(x, y);
+                        ctx.lineTo(x - (wind / height) * len * 0.5, y + len);
+                    }
                 }
                 ctx.stroke();
             });
 
             // -- PARTICLE SYSTEM FOR SPLASHES (Non-Deterministic Visuals for "Wow" factor) --
+            // Since we can't easily integrate physics in a seekable renderer without pre-calc,
+            // we use a "Visual Cloud" of splashes near the water line.
+
             if (hasWater) {
                 const splashCount = 20 * intensity;
                 ctx.fillStyle = `rgba(200, 230, 255, 0.5)`;
                 ctx.beginPath();
 
                 for (let s = 0; s < splashCount; s++) {
-                    const seed = Math.floor(effectiveTime * 10) + s; 
+                    // Random splashes appearing
+                    const seed = Math.floor(effectiveTime * 10) + s; // Changes 10 times/sec
                     const rnd = (n) => Math.abs(Math.sin(seed * n));
 
                     if (rnd(1) > 0.5) continue; // Flicker
 
                     const sx = rnd(2) * width;
-                    const sy = waterY + (rnd(3) - 0.5) * 5; 
+                    const sy = waterY + (rnd(3) - 0.5) * 5; // Near surface
 
+                    // Jump particles
                     const pCount = 3 + Math.floor(rnd(4) * 5);
                     for (let p = 0; p < pCount; p++) {
                         const px = sx + (rnd(p * 10) * 20 - 10);
-                        const py = sy - rnd(p * 20) * 30; 
+                        const py = sy - rnd(p * 20) * 30; // Upwards
                         const size = rnd(p) * 2;
                         ctx.moveTo(px, py);
                         ctx.arc(px, py, size, 0, Math.PI * 2);
                     }
 
+                    // Ripple Ring
                     ctx.moveTo(sx + 20, sy);
                     ctx.ellipse(sx, sy, 20 * rnd(5), 5 * rnd(5), 0, 0, Math.PI * 2);
                 }
