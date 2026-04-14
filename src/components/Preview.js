@@ -194,6 +194,14 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
             fgCtx.font = `${config.artistSize || 30}px ${fontFamily}`;
             fgCtx.fillStyle = config.artistColor || '#ddd';
             fgCtx.fillText(config.artistName || '', tx + (config.artistX || 0), artistY + (config.artistY || 0));
+
+            // Channel Name
+            if (config.channelName) {
+                const channelY = artistY + 35;
+                fgCtx.font = `italic ${config.channelSize || 20}px ${fontFamily}`;
+                fgCtx.fillStyle = config.channelColor || 'rgba(255,255,255,0.6)';
+                fgCtx.fillText(config.channelName, tx + (config.channelX || 0), channelY + (config.channelY || 0));
+            }
             fgCtx.restore();
         }
 
