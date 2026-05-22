@@ -32,6 +32,22 @@ const Sidebar = React.memo(({ config, setConfig, lyricsRaw, setLyricsRaw, onRese
   const handleFileChange = async (e, key) => {
     const file = e.target.files[0];
     if (file) {
+      // 1. Validate File Type
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
+      if (!allowedTypes.includes(file.type)) {
+        alert('Chỉ cho phép upload ảnh định dạng JPG, PNG hoặc GIF.');
+        e.target.value = ''; // Reset input
+        return;
+      }
+
+      // 2. Validate File Size (5MB = 5 * 1024 * 1024 bytes)
+      const maxSize = 5 * 1024 * 1024;
+      if (file.size > maxSize) {
+        alert('Dung lượng file không được vượt quá 5MB.');
+        e.target.value = ''; // Reset input
+        return;
+      }
+
       const url = URL.createObjectURL(file);
       setConfig(prev => ({ ...prev, [key]: url }));
       // Save to IndexedDB for persistence
@@ -138,7 +154,7 @@ const Sidebar = React.memo(({ config, setConfig, lyricsRaw, setLyricsRaw, onRese
                   <div className="file-input-group">
                     <label className="btn">
                       <FaImage /> Ảnh nền (Background)
-                      <input type="file" hidden accept="image/*" onChange={(e) => handleFileChange(e, 'coverImage')} />
+                      <input type="file" hidden accept="image/jpeg,image/png,image/gif" onChange={(e) => handleFileChange(e, 'coverImage')} />
                     </label>
                   </div>
                   <div className="control-row">
@@ -153,7 +169,7 @@ const Sidebar = React.memo(({ config, setConfig, lyricsRaw, setLyricsRaw, onRese
                   <div className="file-input-group">
                     <label className="btn">
                       <FaImage /> Ảnh chính (Trái/Giữa)
-                      <input type="file" hidden accept="image/*" onChange={(e) => handleFileChange(e, 'mainImage')} />
+                      <input type="file" hidden accept="image/jpeg,image/png,image/gif" onChange={(e) => handleFileChange(e, 'mainImage')} />
                     </label>
                   </div>
 

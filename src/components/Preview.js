@@ -354,6 +354,7 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
                     targetCtx.shadowColor = activeColor;
                     targetCtx.shadowBlur = glowSize;
                 } else {
+                    targetCtx.shadowColor = 'transparent';
                     targetCtx.shadowBlur = 0;
                 }
 
@@ -361,6 +362,38 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
                     targetCtx.translate(0, lineY);
                     targetCtx.scale(1.2, 1.2);
                     targetCtx.translate(0, -lineY);
+                }
+
+                if (isActive && styles.includes('box') && !isReflection) {
+                    let maxW = 0;
+                    pos.subLines.forEach(sub => {
+                        const segments = sub.split(/(\[.*?\])/g).filter(s => s);
+                        const fullText = segments.map(s => s.replace(/[\[\]]/g, '')).join('');
+                        const w = targetCtx.measureText(fullText).width;
+                        if (w > maxW) maxW = w;
+                    });
+                    const boxPadX = 20;
+                    const boxPadY = 10;
+                    let bX = 0;
+                    if (config.lyricsAlign === 'center') bX = -maxW/2 - boxPadX;
+                    else if (config.lyricsAlign === 'right') bX = -maxW - boxPadX;
+                    else bX = -boxPadX;
+
+                    const bY = lineY - (pos.blockHeight / 2) - boxPadY;
+                    const bW = maxW + boxPadX * 2;
+                    const bH = pos.blockHeight + boxPadY * 2;
+
+                    targetCtx.save();
+                    targetCtx.fillStyle = config.highlightColor || '#ffeb3b';
+                    targetCtx.globalAlpha = 0.4;
+                    targetCtx.beginPath();
+                    if (targetCtx.roundRect) {
+                        targetCtx.roundRect(bX, bY, bW, bH, 8);
+                    } else {
+                        targetCtx.rect(bX, bY, bW, bH);
+                    }
+                    targetCtx.fill();
+                    targetCtx.restore();
                 }
 
                 const subLineHeight = lyricSize * 1.2;
@@ -715,8 +748,18 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
                     border: '1px solid #333', boxShadow: '0 0 50px rgba(0,0,0,0.8)', cursor: 'pointer'
                 }}
             />
-            {/* Hidden Asset Loaders */}
-            <div style={{ display: 'none' }}>
+            {/* Hidden Asset Loaders: Optimized for keeping GIF animations active */}
+            <div style={{ 
+                position: 'fixed', 
+                top: 0, 
+                left: 0, 
+                width: '1px',
+                height: '1px',
+                opacity: 0.01, // Nearly invisible but still "rendered"
+                overflow: 'hidden',
+                pointerEvents: 'none',
+                zIndex: -1 
+            }}>
                 <img ref={coverImgRef} src={config.coverImage || config.mainImage} alt="asset-cover" onLoad={handleMediaLoad} />
                 
                 {/* Main Media: Image or Video */}

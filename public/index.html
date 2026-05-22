@@ -1,6 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+    <script>
+      // Chặn lỗi từ MetaMask extension không làm hiện overlay của React trong môi trường dev
+      window.addEventListener('error', (event) => {
+        if (event.message.includes('MetaMask') || event.filename?.includes('chrome-extension')) {
+          event.stopImmediatePropagation();
+        }
+      });
+      window.addEventListener('unhandledrejection', (event) => {
+        if (event.reason?.message?.includes('MetaMask')) {
+          event.stopImmediatePropagation();
+          event.preventDefault();
+        }
+      });
+    </script>
     <meta charset="utf-8" />
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />

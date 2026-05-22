@@ -478,13 +478,17 @@ const EditorType1 = () => {
             timelineRef.current.updateTime(Math.max(0, now - (config.trimStart || 0)));
         }
 
-        if (isPlaying || isRecording) {
+        const isMediaDynamic = config.mainImage?.toLowerCase().match(/\.(mp4|webm|mov|gif)$/) || config.backgroundEffect !== 'none';
+
+        if (isPlaying || isRecording || isMediaDynamic) {
             playbackRafRef.current = requestAnimationFrame(tick);
         }
     };
 
     useEffect(() => {
-        if (isPlaying) {
+        const isMediaDynamic = config.mainImage?.toLowerCase().match(/\.(mp4|webm|mov|gif)$/) || config.backgroundEffect !== 'none';
+        
+        if (isPlaying || isMediaDynamic) {
             playbackRafRef.current = requestAnimationFrame(tick);
         } else {
             cancelAnimationFrame(playbackRafRef.current);
@@ -494,7 +498,7 @@ const EditorType1 = () => {
             }
         }
         return () => cancelAnimationFrame(playbackRafRef.current);
-    }, [isPlaying, isRecording]);
+    }, [isPlaying, isRecording, config.mainImage, config.backgroundEffect]);
 
     const canvasRef = useRef(null); // Passed to Preview, but we don't access strictly here except for export logic which is now different.
 
@@ -602,7 +606,7 @@ const EditorType1 = () => {
                 codec: 'avc1.4d002a', // Main Profile, Level 4.2 (Supports 1080p)
                 width,
                 height,
-                bitrate: 5_000_000, // 5 Mbps
+                bitrate: 15_000_000, // 15 Mbps to prevent text ringing/blur artifacts
                 framerate: fps
             });
 
