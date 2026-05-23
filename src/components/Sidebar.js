@@ -33,17 +33,26 @@ const Sidebar = React.memo(({ config, setConfig, lyricsRaw, setLyricsRaw, onRese
     const file = e.target.files[0];
     if (file) {
       // 1. Validate File Type
-      const allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
-      if (!allowedTypes.includes(file.type)) {
-        alert('Chỉ cho phép upload ảnh định dạng JPG, PNG hoặc GIF.');
-        e.target.value = ''; // Reset input
-        return;
+      const isAudio = key === 'audioUrl';
+      if (isAudio) {
+        if (!file.type.startsWith('audio/') && !file.type.startsWith('video/')) {
+          alert('Chỉ cho phép upload file âm thanh hoặc video.');
+          e.target.value = '';
+          return;
+        }
+      } else {
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
+        if (!allowedTypes.includes(file.type)) {
+          alert('Chỉ cho phép upload ảnh định dạng JPG, PNG hoặc GIF.');
+          e.target.value = ''; // Reset input
+          return;
+        }
       }
 
-      // 2. Validate File Size (5MB = 5 * 1024 * 1024 bytes)
-      const maxSize = 5 * 1024 * 1024;
+      // 2. Validate File Size (50MB cho âm thanh, 5MB cho ảnh)
+      const maxSize = isAudio ? 50 * 1024 * 1024 : 5 * 1024 * 1024;
       if (file.size > maxSize) {
-        alert('Dung lượng file không được vượt quá 5MB.');
+        alert(`Dung lượng file không được vượt quá ${isAudio ? '50MB' : '5MB'}.`);
         e.target.value = ''; // Reset input
         return;
       }
