@@ -505,10 +505,7 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
                         if (isActive && seg.isHighlighted) {
                             segColor = seg.color || syntaxes[0]?.color || '#ffeb3b';
                         }
-                        if (isActive && styles.includes('solidBox')) {
-                            // If solid box is enabled, ensure text contrasts with the box. We can make it black.
-                            segColor = '#000000';
-                        }
+
                         targetCtx.fillStyle = segColor;
 
                         // Karaoke logic for segments
