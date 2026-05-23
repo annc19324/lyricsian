@@ -321,6 +321,7 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
                     targetCtx.shadowBlur = 4;
                     targetCtx.shadowOffsetX = 2;
                     targetCtx.shadowOffsetY = 2;
+                }
                 const songFontFamily = config.songFont || fontFamily;
                 targetCtx.font = `bold ${config.songSize || 40}px ${songFontFamily} `;
                 targetCtx.fillStyle = config.songColor || 'white';
