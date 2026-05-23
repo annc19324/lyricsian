@@ -247,9 +247,8 @@ input[type=number] {
 
 @media (max-width: 900px) {
   .preview-area {
-    aspect-ratio: 16/9;
+    height: 40vh;
     width: 100%;
-    height: auto;
     position: sticky;
     top: 0;
     z-index: 1000;
@@ -257,7 +256,7 @@ input[type=number] {
 
   .timeline-bar {
     position: sticky;
-    top: 56.25vw;
+    top: 40vh;
     /* Position right below sticky preview */
     z-index: 999;
     flex-wrap: wrap;

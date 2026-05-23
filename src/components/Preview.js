@@ -72,6 +72,47 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
         const blockGap = lyricSize * 1.0;
         const maxWidth = width * 0.8;
 
+        const syntaxes = config.customSyntaxes || [{ id: 1, open: '[', close: ']', color: '#ffeb3b' }];
+
+        const tokenizeText = (text, syns) => {
+            let result = [];
+            let current = 0;
+            while (current < text.length) {
+                let nextSyn = null;
+                let nextIndex = text.length;
+                for (const syn of syns) {
+                    if (!syn.open || !syn.close) continue;
+                    const idx = text.indexOf(syn.open, current);
+                    if (idx !== -1 && idx < nextIndex) {
+                        nextIndex = idx;
+                        nextSyn = syn;
+                    }
+                }
+                if (nextSyn) {
+                    if (nextIndex > current) {
+                        result.push({ text: text.substring(current, nextIndex), isHighlighted: false, color: null });
+                    }
+                    const closeIdx = text.indexOf(nextSyn.close, nextIndex + nextSyn.open.length);
+                    if (closeIdx !== -1) {
+                        result.push({
+                            text: text.substring(nextIndex + nextSyn.open.length, closeIdx),
+                            isHighlighted: true,
+                            color: nextSyn.color,
+                        });
+                        current = closeIdx + nextSyn.close.length;
+                    } else {
+                        result.push({ text: text.substring(nextIndex, nextIndex + nextSyn.open.length), isHighlighted: false, color: null });
+                        current = nextIndex + nextSyn.open.length;
+                    }
+                } else {
+                    result.push({ text: text.substring(current), isHighlighted: false, color: null });
+                    break;
+                }
+            }
+            return result;
+        };
+        const getCleanText = (text, syns) => tokenizeText(text, syns).map(t => t.text).join('');
+
         const wrapText = (text, maxW) => {
             const lines = [];
             let currentLine = "";
@@ -80,7 +121,7 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
             for (let i = 0; i < words.length; i++) {
                 const word = words[i];
                 // Clean syntax for measurement
-                const cleanWord = word.replace(/[\[\]]/g, '');
+                const cleanWord = getCleanText(word, syntaxes);
                 const testLine = currentLine + (currentLine ? " " : "") + cleanWord;
                 const w = ctx.measureText(testLine).width;
                 if (w < maxW || !currentLine) {
@@ -99,8 +140,7 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
 
         lyrics.forEach((line, i) => {
             // Pre-process syntax highlighting markers
-            const segments = line.text.split(/(\[.*?\])/g).filter(s => s);
-            const flatText = segments.map(s => s.replace(/[\[\]]/g, '')).join('');
+            const flatText = getCleanText(line.text, syntaxes);
             
             const explicitLines = line.text.split('\n');
             let finalSubLines = [];
@@ -258,7 +298,7 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
 
                 if (!isReflection) {
                     if (config.enableFloatingObject !== false) {
-                        const floatY = Math.sin(effectiveTime * 1.5) * 5;
+                        const floatY = Math.sin(effectiveTime * (config.floatingSpeed ?? 1.5)) * 5;
                         drawY += floatY;
                     }
                     targetCtx.shadowColor = 'rgba(0,0,0,0.5)';
@@ -281,20 +321,21 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
                     targetCtx.shadowBlur = 4;
                     targetCtx.shadowOffsetX = 2;
                     targetCtx.shadowOffsetY = 2;
-                }
-
-                targetCtx.font = `bold ${config.songSize || 40}px ${fontFamily} `;
+                const songFontFamily = config.songFont || fontFamily;
+                targetCtx.font = `bold ${config.songSize || 40}px ${songFontFamily} `;
                 targetCtx.fillStyle = config.songColor || 'white';
                 targetCtx.fillText(config.songName || '', textX + (config.songX || 0), baseTextY + (config.songY || 0));
 
                 const artistBaseY = baseTextY + 45;
-                targetCtx.font = `${config.artistSize || 30}px ${fontFamily} `;
+                const artistFontFamily = config.artistFont || fontFamily;
+                targetCtx.font = `${config.artistSize || 30}px ${artistFontFamily} `;
                 targetCtx.fillStyle = config.artistColor || '#ddd';
                 targetCtx.fillText(config.artistName || '', textX + (config.artistX || 0), artistBaseY + (config.artistY || 0));
 
                 if (config.channelName) {
                     const channelBaseY = artistBaseY + 35;
-                    targetCtx.font = `italic ${config.channelSize || 20}px ${fontFamily} `;
+                    const channelFontFamily = config.channelFont || fontFamily;
+                    targetCtx.font = `italic ${config.channelSize || 20}px ${channelFontFamily} `;
                     targetCtx.fillStyle = config.channelColor || 'rgba(255,255,255,0.6)';
                     targetCtx.fillText(config.channelName, textX + (config.channelX || 0), channelBaseY + (config.channelY || 0));
                 }
@@ -360,15 +401,55 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
 
                 if (isActive && styles.includes('scale')) {
                     targetCtx.translate(0, lineY);
-                    targetCtx.scale(1.2, 1.2);
+                    const scaleFactor = config.activeScale ?? 1.2;
+                    targetCtx.scale(scaleFactor, scaleFactor);
                     targetCtx.translate(0, -lineY);
                 }
 
-                if (isActive && styles.includes('box') && !isReflection) {
+                const syntaxes = config.customSyntaxes || [{ id: 1, open: '[', close: ']', color: '#ffeb3b' }];
+                const tokenizeText = (text, syns) => {
+                    let result = [];
+                    let current = 0;
+                    while (current < text.length) {
+                        let nextSyn = null;
+                        let nextIndex = text.length;
+                        for (const syn of syns) {
+                            if (!syn.open || !syn.close) continue;
+                            const idx = text.indexOf(syn.open, current);
+                            if (idx !== -1 && idx < nextIndex) {
+                                nextIndex = idx;
+                                nextSyn = syn;
+                            }
+                        }
+                        if (nextSyn) {
+                            if (nextIndex > current) {
+                                result.push({ text: text.substring(current, nextIndex), isHighlighted: false, color: null });
+                            }
+                            const closeIdx = text.indexOf(nextSyn.close, nextIndex + nextSyn.open.length);
+                            if (closeIdx !== -1) {
+                                result.push({
+                                    text: text.substring(nextIndex + nextSyn.open.length, closeIdx),
+                                    isHighlighted: true,
+                                    color: nextSyn.color,
+                                });
+                                current = closeIdx + nextSyn.close.length;
+                            } else {
+                                result.push({ text: text.substring(nextIndex, nextIndex + nextSyn.open.length), isHighlighted: false, color: null });
+                                current = nextIndex + nextSyn.open.length;
+                            }
+                        } else {
+                            result.push({ text: text.substring(current), isHighlighted: false, color: null });
+                            break;
+                        }
+                    }
+                    return result;
+                };
+                const getCleanText = (text, syns) => tokenizeText(text, syns).map(t => t.text).join('');
+
+                if (isActive && (styles.includes('box') || styles.includes('solidBox')) && !isReflection) {
                     let maxW = 0;
                     pos.subLines.forEach(sub => {
-                        const segments = sub.split(/(\[.*?\])/g).filter(s => s);
-                        const fullText = segments.map(s => s.replace(/[\[\]]/g, '')).join('');
+                        const fullText = getCleanText(sub, syntaxes);
                         const w = targetCtx.measureText(fullText).width;
                         if (w > maxW) maxW = w;
                     });
@@ -384,8 +465,9 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
                     const bH = pos.blockHeight + boxPadY * 2;
 
                     targetCtx.save();
-                    targetCtx.fillStyle = config.highlightColor || '#ffeb3b';
-                    targetCtx.globalAlpha = 0.4;
+                    const primaryBoxColor = syntaxes[0]?.color || '#ffeb3b';
+                    targetCtx.fillStyle = primaryBoxColor;
+                    targetCtx.globalAlpha = styles.includes('solidBox') ? 1.0 : 0.4;
                     targetCtx.beginPath();
                     if (targetCtx.roundRect) {
                         targetCtx.roundRect(bX, bY, bW, bH, 8);
@@ -402,11 +484,9 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
                     const verticalOffset = (subIndex - (pos.subLines.length - 1) / 2) * subLineHeight;
                     const y = lineY + verticalOffset;
 
-                    // Parse segments for highlighted text [...]
-                    const segments = sub.split(/(\[.*?\])/g).filter(s => s);
+                    const segments = tokenizeText(sub, syntaxes);
                     
-                    // Measure full width to handle alignment
-                    const fullText = segments.map(s => s.replace(/[\[\]]/g, '')).join('');
+                    const fullText = getCleanText(sub, syntaxes);
                     const totalW = targetCtx.measureText(fullText).width;
                     
                     let startX = 0;
@@ -416,12 +496,19 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
                     let currentX = startX;
 
                     segments.forEach(seg => {
-                        const isHighlighted = seg.startsWith('[') && seg.endsWith(']');
-                        const cleanSeg = seg.replace(/[\[\]]/g, '');
+                        const cleanSeg = seg.text;
                         const segW = targetCtx.measureText(cleanSeg).width;
 
                         targetCtx.save();
-                        targetCtx.fillStyle = (isActive && isHighlighted) ? (config.highlightColor || '#ffeb3b') : baseColor;
+                        let segColor = baseColor;
+                        if (isActive && seg.isHighlighted) {
+                            segColor = seg.color || syntaxes[0]?.color || '#ffeb3b';
+                        }
+                        if (isActive && styles.includes('solidBox')) {
+                            // If solid box is enabled, ensure text contrasts with the box. We can make it black.
+                            segColor = '#000000';
+                        }
+                        targetCtx.fillStyle = segColor;
 
                         // Karaoke logic for segments
                         const isKaraoke = isActive && styles.includes('karaoke');
@@ -432,15 +519,18 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
                             const duration = (next - start) / kSpeed;
                             const globalProgress = Math.min(1, Math.max(0, (effectiveTime - start) / duration));
 
-                            const totalSubCount = pos.subLines.length;
-                            const subStart = subIndex / totalSubCount;
-                            const subEnd = (subIndex + 1) / totalSubCount;
-
                             let subProgress = 0;
-                            if (globalProgress >= subEnd) subProgress = 1;
-                            else if (globalProgress >= subStart) subProgress = (globalProgress - subStart) / (subEnd - subStart);
+                            const karaokeMode = config.karaokeMode || 'smooth';
 
-                            // For karaoke inside segments, we just use the subProgress
+                            if (karaokeMode === 'smooth') {
+                                const targetX = startX + totalW * globalProgress;
+                                subProgress = Math.min(1, Math.max(0, (targetX - currentX) / segW));
+                            } else {
+                                // segment mode: jumps block by block
+                                const threshold = (currentX - startX + segW / 2) / totalW;
+                                subProgress = globalProgress >= threshold ? 1 : 0;
+                            }
+
                             targetCtx.save();
                             targetCtx.globalAlpha = 0.3;
                             targetCtx.fillText(cleanSeg, currentX, y);

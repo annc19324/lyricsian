@@ -357,18 +357,9 @@ const Sidebar = React.memo(({ config, setConfig, lyricsRaw, setLyricsRaw, onRese
               />
             </div>
             <div className="control-row">
-              <label>Màu chữ Nhấn mạnh ([...])</label>
-              <input
-                type="color"
-                value={config.highlightColor || '#ffeb3b'}
-                onChange={(e) => setConfig({ ...config, highlightColor: e.target.value })}
-                style={{ width: '100%', height: '30px', cursor: 'pointer', border: 'none', background: 'none' }}
-              />
-            </div>
-            <div className="control-row">
               <label>Hiệu ứng nổi bật</label>
               <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-                {['color', 'karaoke', 'scale', 'glow', 'box'].map(style => {
+                {['color', 'karaoke', 'scale', 'glow', 'box', 'solidBox'].map(style => {
                   const activeStyles = config.highlightStyles || [];
                   const isActive = activeStyles.includes(style);
                   return (
@@ -386,11 +377,42 @@ const Sidebar = React.memo(({ config, setConfig, lyricsRaw, setLyricsRaw, onRese
                         setConfig({ ...config, highlightStyles: newStyles });
                       }}
                     >
-                      {{ color: 'Màu', karaoke: 'Karaoke', scale: 'Phóng to', glow: 'Phát sáng', box: 'Khung' }[style]}
+                      {{ color: 'Màu', karaoke: 'Karaoke', scale: 'Phóng to', glow: 'Phát sáng', box: 'Khung mờ', solidBox: 'Khung đặc' }[style]}
                     </button>
                   );
                 })}
               </div>
+            </div>
+
+            <div className="control-row" style={{ marginTop: '15px' }}>
+              <label style={{ color: 'var(--primary-glow)', marginBottom: '10px', display: 'block' }}>Tùy chỉnh Cú pháp ([...], **...**, vv)</label>
+              {(config.customSyntaxes || [{ id: 1, open: '[', close: ']', color: '#ffeb3b' }]).map((syn, index) => (
+                <div key={syn.id || index} style={{ display: 'flex', gap: '5px', marginBottom: '5px' }}>
+                  <input type="text" value={syn.open} onChange={e => {
+                     const newSyn = [...(config.customSyntaxes || [{ id: 1, open: '[', close: ']', color: '#ffeb3b' }])];
+                     newSyn[index].open = e.target.value;
+                     setConfig({ ...config, customSyntaxes: newSyn });
+                  }} style={{ width: '50px', padding: '5px' }} placeholder="Mở" />
+                  <input type="text" value={syn.close} onChange={e => {
+                     const newSyn = [...(config.customSyntaxes || [{ id: 1, open: '[', close: ']', color: '#ffeb3b' }])];
+                     newSyn[index].close = e.target.value;
+                     setConfig({ ...config, customSyntaxes: newSyn });
+                  }} style={{ width: '50px', padding: '5px' }} placeholder="Đóng" />
+                  <input type="color" value={syn.color} onChange={e => {
+                     const newSyn = [...(config.customSyntaxes || [{ id: 1, open: '[', close: ']', color: '#ffeb3b' }])];
+                     newSyn[index].color = e.target.value;
+                     setConfig({ ...config, customSyntaxes: newSyn });
+                  }} style={{ flex: 1, height: '30px', padding: 0, border: 'none', background: 'none', cursor: 'pointer' }} />
+                  <button className="btn danger" style={{ padding: '0 10px' }} onClick={() => {
+                     const newSyn = (config.customSyntaxes || [{ id: 1, open: '[', close: ']', color: '#ffeb3b' }]).filter((_, i) => i !== index);
+                     setConfig({ ...config, customSyntaxes: newSyn });
+                  }}>X</button>
+                </div>
+              ))}
+              <button className="btn" style={{ fontSize: '0.8rem', padding: '5px' }} onClick={() => {
+                 const newSyn = [...(config.customSyntaxes || [{ id: 1, open: '[', close: ']', color: '#ffeb3b' }]), { id: Date.now(), open: '(', close: ')', color: '#ff0000' }];
+                 setConfig({ ...config, customSyntaxes: newSyn });
+              }}>+ Thêm cú pháp</button>
             </div>
 
             <div className="control-row" style={{ marginTop: '15px', borderTop: '1px solid #333', paddingTop: '10px' }}>
@@ -438,15 +460,29 @@ const Sidebar = React.memo(({ config, setConfig, lyricsRaw, setLyricsRaw, onRese
             </div>
 
             {(config.highlightStyles || []).includes('karaoke') && (
-              <div className="control-row">
-                <label>Tốc độ Karaoke ({config.karaokeSpeed || 1.0}x)</label>
-                <input
-                  type="range" min="0.5" max="3.0" step="0.1"
-                  value={config.karaokeSpeed || 1.0}
-                  onChange={(e) => setConfig({ ...config, karaokeSpeed: parseFloat(e.target.value) })}
-                />
-              </div>
+              <>
+                <div className="control-row">
+                  <label>Chế độ Karaoke</label>
+                  <select value={config.karaokeMode || 'smooth'} onChange={e => setConfig({ ...config, karaokeMode: e.target.value })} style={{ padding: '5px', background: 'rgba(0,0,0,0.2)', color: 'white', border: '1px solid var(--border)', borderRadius: '4px' }}>
+                    <option value="smooth">Chạy đều cả dòng (Smooth)</option>
+                    <option value="segment">Chạy từng đoạn (Segment)</option>
+                  </select>
+                </div>
+                <div className="control-row">
+                  <label>Tốc độ Karaoke ({config.karaokeSpeed || 1.0}x)</label>
+                  <input
+                    type="range" min="0.5" max="3.0" step="0.1"
+                    value={config.karaokeSpeed || 1.0}
+                    onChange={(e) => setConfig({ ...config, karaokeSpeed: parseFloat(e.target.value) })}
+                  />
+                </div>
+              </>
             )}
+            <div className="control-row">
+              <label>Độ Phóng to ({config.activeScale ?? 1.2}x)</label>
+              <input type="range" min="1.0" max="3.0" step="0.1" value={config.activeScale ?? 1.2} onChange={e => setConfig({ ...config, activeScale: parseFloat(e.target.value) })} />
+            </div>
+
           </div>
         )}
 
@@ -594,6 +630,16 @@ const Sidebar = React.memo(({ config, setConfig, lyricsRaw, setLyricsRaw, onRese
 
                     <div className="control-row" style={{ flexDirection: 'row', gap: '5px' }}>
                       <div style={{ flex: 1 }}>
+                        <label style={{ display: 'block', marginBottom: '2px' }}>Phông chữ</label>
+                        <select
+                          value={config[`${type}Font`] || config.fontFamily}
+                          onChange={(e) => setConfig({ ...config, [`${type}Font`]: e.target.value })}
+                          style={{ width: '100%', padding: '5px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border)', color: 'white', borderRadius: '4px', fontSize: '0.7rem' }}
+                        >
+                          {fonts.map(f => <option key={f} value={f}>{f}</option>)}
+                        </select>
+                      </div>
+                      <div style={{ flex: 0.5 }}>
                         <label style={{ display: 'block', marginBottom: '2px' }}>Cỡ chữ</label>
                         <input
                           type="number"
@@ -782,6 +828,12 @@ const Sidebar = React.memo(({ config, setConfig, lyricsRaw, setLyricsRaw, onRese
                 <div style={{ fontSize: '0.7rem', color: '#888', marginTop: '5px' }}>
                   Áp dụng chuyển động nhẹ cho Hình ảnh & Thông tin bài hát.
                 </div>
+                {(config.enableFloatingObject ?? true) && (
+                  <div className="control-row" style={{ marginTop: '10px' }}>
+                    <label>Tốc độ trôi ({config.floatingSpeed ?? 1.5}x)</label>
+                    <input type="range" min="0.1" max="5" step="0.1" value={config.floatingSpeed ?? 1.5} onChange={e => setConfig({ ...config, floatingSpeed: parseFloat(e.target.value) })} />
+                  </div>
+                )}
               </div>
 
             </div>
@@ -816,9 +868,18 @@ const Sidebar = React.memo(({ config, setConfig, lyricsRaw, setLyricsRaw, onRese
                       borderRadius: '4px'
                     }}>
                     <span style={{ fontSize: '0.7rem', color: '#888', minWidth: '20px' }}>{i + 1}</span>
-                    <span style={{ flex: 1, fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: isCurrent ? '#fff' : '#ccc' }}>
-                      {line.text}
-                    </span>
+                    <div style={{ flex: 1 }}>
+                      <input
+                        type="text"
+                        value={line.text}
+                        onChange={(e) => {
+                          const newLyrics = [...lyrics];
+                          newLyrics[i].text = e.target.value;
+                          setLyricsRaw(newLyrics.map(l => l.text).join('\n\n'));
+                        }}
+                        style={{ width: '100%', background: 'transparent', border: 'none', color: isCurrent ? '#fff' : '#ccc', fontSize: '0.8rem', padding: '2px' }}
+                      />
+                    </div>
                     <input
                       type="number"
                       step="0.1"

@@ -61,7 +61,14 @@ const defaultConfig = {
     waveSpeed: 1.0,         // For water
     waveAmplitude: 10,      // For water
     reflectionOpacity: 0.5, // For water
-    particleCount: 100      // For rain/particles
+    particleCount: 100,      // For rain/particles
+    karaokeMode: 'smooth',
+    customSyntaxes: [{ id: 1, open: '[', close: ']', color: '#ffeb3b' }],
+    activeScale: 1.2,
+    floatingSpeed: 1.5,
+    songFont: 'Inter',
+    artistFont: 'Inter',
+    channelFont: 'Inter'
 };
 const EditorType1 = () => {
     const [sidebarWidth, setSidebarWidth] = useState(450);
