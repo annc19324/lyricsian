@@ -471,7 +471,7 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
                         bW = maxW + boxPadX * 2;
                     }
 
-                    const bY = lineY - (pos.blockHeight / 2) - boxPadY;
+                    const bY = (isFullBox ? 0 : lineY) - (pos.blockHeight / 2) - boxPadY;
                     const bH = pos.blockHeight + boxPadY * 2;
 
                     targetCtx.save();
