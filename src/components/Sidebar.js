@@ -359,7 +359,7 @@ const Sidebar = React.memo(({ config, setConfig, lyricsRaw, setLyricsRaw, onRese
             <div className="control-row">
               <label>Hiệu ứng nổi bật</label>
               <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-                {['color', 'karaoke', 'scale', 'glow', 'box', 'solidBox'].map(style => {
+                {['color', 'karaoke', 'scale', 'glow', 'box', 'solidBox', 'fullBox'].map(style => {
                   const activeStyles = config.highlightStyles || [];
                   const isActive = activeStyles.includes(style);
                   return (
@@ -377,7 +377,7 @@ const Sidebar = React.memo(({ config, setConfig, lyricsRaw, setLyricsRaw, onRese
                         setConfig({ ...config, highlightStyles: newStyles });
                       }}
                     >
-                      {{ color: 'Màu', karaoke: 'Karaoke', scale: 'Phóng to', glow: 'Phát sáng', box: 'Khung mờ', solidBox: 'Khung đặc' }[style]}
+                      {{ color: 'Màu', karaoke: 'Karaoke', scale: 'Phóng to', glow: 'Phát sáng', box: 'Khung mờ', solidBox: 'Khung đặc', fullBox: 'Khung dài' }[style]}
                     </button>
                   );
                 })}

@@ -447,7 +447,7 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
                 };
                 const getCleanText = (text, syns) => tokenizeText(text, syns).map(t => t.text).join('');
 
-                if (isActive && (styles.includes('box') || styles.includes('solidBox')) && !isReflection) {
+                if (isActive && (styles.includes('box') || styles.includes('solidBox') || styles.includes('fullBox')) && !isReflection) {
                     let maxW = 0;
                     pos.subLines.forEach(sub => {
                         const fullText = getCleanText(sub, syntaxes);
@@ -457,20 +457,31 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
                     const boxPadX = 20;
                     const boxPadY = 10;
                     let bX = 0;
-                    if (config.lyricsAlign === 'center') bX = -maxW/2 - boxPadX;
-                    else if (config.lyricsAlign === 'right') bX = -maxW - boxPadX;
-                    else bX = -boxPadX;
+                    let bW = 0;
+                    
+                    const isFullBox = styles.includes('fullBox');
+                    if (isFullBox) {
+                        const overscan = 200 / config.lyricsScale;
+                        bX = (-tx / config.lyricsScale) - overscan;
+                        bW = (width / config.lyricsScale) + (overscan * 2);
+                    } else {
+                        if (config.lyricsAlign === 'center') bX = -maxW/2 - boxPadX;
+                        else if (config.lyricsAlign === 'right') bX = -maxW - boxPadX;
+                        else bX = -boxPadX;
+                        bW = maxW + boxPadX * 2;
+                    }
 
                     const bY = lineY - (pos.blockHeight / 2) - boxPadY;
-                    const bW = maxW + boxPadX * 2;
                     const bH = pos.blockHeight + boxPadY * 2;
 
                     targetCtx.save();
                     const primaryBoxColor = syntaxes[0]?.color || '#ffeb3b';
                     targetCtx.fillStyle = primaryBoxColor;
-                    targetCtx.globalAlpha = styles.includes('solidBox') ? 1.0 : 0.4;
+                    targetCtx.globalAlpha = (styles.includes('solidBox') || isFullBox) ? 1.0 : 0.4;
                     targetCtx.beginPath();
-                    if (targetCtx.roundRect) {
+                    if (isFullBox) {
+                        targetCtx.rect(bX, bY, bW, bH);
+                    } else if (targetCtx.roundRect) {
                         targetCtx.roundRect(bX, bY, bW, bH, 8);
                     } else {
                         targetCtx.rect(bX, bY, bW, bH);
