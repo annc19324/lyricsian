@@ -384,6 +384,18 @@ const Sidebar = React.memo(({ config, setConfig, lyricsRaw, setLyricsRaw, onRese
               </div>
             </div>
 
+            {(config.highlightStyles || []).some(s => ['box', 'solidBox', 'fullBox'].includes(s)) && (
+              <div className="control-row" style={{ marginTop: '10px' }}>
+                <label>Màu nền Khung</label>
+                <input
+                  type="color"
+                  value={config.boxColor || '#000000'}
+                  onChange={(e) => setConfig({ ...config, boxColor: e.target.value })}
+                  style={{ width: '100%', height: '30px', cursor: 'pointer', border: 'none', background: 'none' }}
+                />
+              </div>
+            )}
+
             <div className="control-row" style={{ marginTop: '15px' }}>
               <label style={{ color: 'var(--primary-glow)', marginBottom: '10px', display: 'block' }}>Tùy chỉnh Cú pháp ([...], **...**, vv)</label>
               {(config.customSyntaxes || [{ id: 1, open: '[', close: ']', color: '#ffeb3b' }]).map((syn, index) => (

@@ -475,7 +475,7 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
                     const bH = pos.blockHeight + boxPadY * 2;
 
                     targetCtx.save();
-                    const primaryBoxColor = syntaxes[0]?.color || '#ffeb3b';
+                    const primaryBoxColor = config.boxColor || '#000000';
                     targetCtx.fillStyle = primaryBoxColor;
                     targetCtx.globalAlpha = (styles.includes('solidBox') || isFullBox) ? 1.0 : 0.4;
                     targetCtx.beginPath();

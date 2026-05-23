@@ -66,6 +66,7 @@ const defaultConfig = {
     customSyntaxes: [{ id: 1, open: '[', close: ']', color: '#ffeb3b' }],
     activeScale: 1.2,
     floatingSpeed: 1.5,
+    boxColor: '#000000',
     songFont: 'Inter',
     artistFont: 'Inter',
     channelFont: 'Inter'
