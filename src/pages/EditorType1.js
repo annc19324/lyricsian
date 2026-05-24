@@ -48,6 +48,7 @@ const defaultConfig = {
     trimEnd: 0,
     fadeIn: 0,
     fadeOut: 0,
+    audioOffset: 0.3,
 
     // New Effects & Styling
     lyricsGlowSize: 0,      // Custom Glow Size
@@ -548,6 +549,8 @@ const EditorType1 = () => {
 
             // Audio Trim Logic
             const startTime = config.trimStart || 0;
+            const audioOffset = config.audioOffset ?? 0;
+            const audioStartTime = Math.max(0, startTime + audioOffset);
             // If trimEnd is 0 or undefined, use full duration.
             // But better to use `duration` state if available.
             const fullDuration = duration || 300;
@@ -674,7 +677,7 @@ const EditorType1 = () => {
 
             const ffmpegArgs = [
                 '-i', 'video_clean.mp4',
-                '-ss', startTime.toString(),
+                '-ss', audioStartTime.toFixed(3),
                 '-t', totalDuration.toString(),
                 '-i', 'audio_decoded.wav',
                 '-map', '0:v',
