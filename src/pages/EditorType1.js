@@ -187,41 +187,11 @@ const EditorType1 = () => {
         load();
     }, []);
 
-    // Persistent Audio Context State
-    const [audioContext, setAudioContext] = useState(null);
-    const [audioSource, setAudioSource] = useState(null);
-    const [audioDest, setAudioDest] = useState(null);
-
     const audioRef = useRef(null);
     const mediaRecorderRef = useRef(null);
     const isExportCancelledRef = useRef(false);
 
-    useEffect(() => {
-        // Initialize Audio Context only once
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const dest = ctx.createMediaStreamDestination();
-        setAudioContext(ctx);
-        setAudioDest(dest);
 
-        return () => {
-            ctx.close();
-        };
-    }, []);
-
-    // Connect Audio Element to Context when ready
-    useEffect(() => {
-        if (audioRef.current && audioContext && audioDest && !audioSource) {
-            try {
-                // Check if we can connect?
-                const src = audioContext.createMediaElementSource(audioRef.current);
-                src.connect(audioContext.destination);
-                src.connect(audioDest);
-                setAudioSource(src);
-            } catch (e) {
-                // Already connected, ignore
-            }
-        }
-    }, [audioContext, audioDest, audioSource]);
 
     // Persistence
     useEffect(() => { localStorage.setItem('lyricsian_config', JSON.stringify(config)); }, [config]);
@@ -415,11 +385,6 @@ const EditorType1 = () => {
         }
         if (!audioRef.current) return;
 
-        // Resume Audio Context if suspended
-        if (audioContext && audioContext.state === 'suspended') {
-            await audioContext.resume();
-        }
-
         if (isPlaying) {
             audioRef.current.pause();
             setIsPlaying(false);
@@ -453,7 +418,6 @@ const EditorType1 = () => {
             // But typically toggle off stops.
         } else {
             if (!config.audioUrl) return alert("Load audio first");
-            if (audioContext && audioContext.state === 'suspended') await audioContext.resume();
 
             try {
                 await audioRef.current.play();
