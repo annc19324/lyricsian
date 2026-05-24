@@ -604,9 +604,9 @@ const EditorType1 = () => {
                 const bitmap = await createImageBitmap(canvas);
 
                 // Timestamp in microseconds
-                const timestamp = i * (1_000_000 / fps);
+                const timestamp = Math.round(i * (1_000_000 / fps));
 
-                const frame = new VideoFrame(bitmap, { timestamp: timestamp, duration: 1_000_000 / fps });
+                const frame = new VideoFrame(bitmap, { timestamp: timestamp, duration: Math.round(1_000_000 / fps) });
 
                 const keyFrame = (i % 30 === 0);
 
@@ -638,13 +638,16 @@ const EditorType1 = () => {
             const fadeOut = config.fadeOut || 0;
 
             const filters = [];
+            
+            // Use exact audio trimming via filter instead of inaccurate fast-seeking
+            filters.push(`atrim=start=${startTime}:duration=${totalDuration}`);
+            filters.push(`asetpts=PTS-STARTPTS`);
+
             if (fadeIn > 0) filters.push(`afade=t=in:st=0:d=${fadeIn}`);
             if (fadeOut > 0) filters.push(`afade=t=out:st=${totalDuration - fadeOut}:d=${fadeOut}`);
 
             const ffmpegArgs = [
                 '-i', 'video_clean.mp4',
-                '-ss', startTime.toString(),
-                '-t', totalDuration.toString(),
                 '-i', 'audio_source.wav',
                 '-map', '0:v',
                 '-map', '1:a',
