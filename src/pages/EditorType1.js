@@ -536,6 +536,8 @@ const EditorType1 = () => {
             setIsRecording(false);
         }
 
+        let audioFilename = 'audio_source.mp3'; // Fallback
+
         try {
             setIsExporting(true);
             setIsExportMinimized(false);
@@ -631,8 +633,33 @@ const EditorType1 = () => {
             setEncodingProgress(90);
 
             const ffmpeg = ffmpegRef.current;
+
+            // Dynamically detect file extension to prevent FFmpeg demuxer mismatch
+            let audioExt = 'mp3';
+            try {
+                if (config.audioUrl.startsWith('blob:')) {
+                    const res = await fetch(config.audioUrl);
+                    const blob = await res.blob();
+                    const mime = blob.type || '';
+                    if (mime.includes('wav')) audioExt = 'wav';
+                    else if (mime.includes('webm')) audioExt = 'webm';
+                    else if (mime.includes('ogg')) audioExt = 'ogg';
+                    else if (mime.includes('aac')) audioExt = 'aac';
+                    else if (mime.includes('m4a') || mime.includes('mp4')) audioExt = 'm4a';
+                } else {
+                    const urlNoQuery = config.audioUrl.split('?')[0];
+                    const parsedExt = urlNoQuery.substring(urlNoQuery.lastIndexOf('.') + 1).toLowerCase();
+                    if (['mp3', 'wav', 'webm', 'ogg', 'aac', 'm4a', 'mp4'].includes(parsedExt)) {
+                        audioExt = parsedExt;
+                    }
+                }
+            } catch (e) {
+                console.warn("Failed to detect audio format, defaulting to mp3", e);
+            }
+            audioFilename = `audio_source.${audioExt}`;
+
             await ffmpeg.writeFile('video_clean.mp4', await fetchFile(videoBlob));
-            await ffmpeg.writeFile('audio_source.wav', await fetchFile(config.audioUrl));
+            await ffmpeg.writeFile(audioFilename, await fetchFile(config.audioUrl));
 
             const fadeIn = config.fadeIn || 0;
             const fadeOut = config.fadeOut || 0;
@@ -648,7 +675,7 @@ const EditorType1 = () => {
 
             const ffmpegArgs = [
                 '-i', 'video_clean.mp4',
-                '-i', 'audio_source.wav',
+                '-i', audioFilename,
                 '-map', '0:v',
                 '-map', '1:a',
                 '-c:v', 'copy',
@@ -675,9 +702,9 @@ const EditorType1 = () => {
             const url = URL.createObjectURL(finalBlob);
             const normalize = (str) => {
                 return str.toLowerCase()
-                    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-                    .replace(/\s+/g, '')
-                    .replace(/[^a-z0-9]/g, '');
+                     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+                     .replace(/\s+/g, '')
+                     .replace(/[^a-z0-9]/g, '');
             };
             const fileName = normalize(config.songName || 'video');
 
@@ -689,7 +716,7 @@ const EditorType1 = () => {
             // Cleanup
             try {
                 await ffmpeg.deleteFile('video_clean.mp4');
-                await ffmpeg.deleteFile('audio_source.wav');
+                await ffmpeg.deleteFile(audioFilename);
                 await ffmpeg.deleteFile('final_output.mp4');
             } catch (e) { }
 
@@ -706,7 +733,7 @@ const EditorType1 = () => {
             try {
                 const ffmpeg = ffmpegRef.current;
                 await ffmpeg.deleteFile('video_clean.mp4');
-                await ffmpeg.deleteFile('audio_source.wav');
+                await ffmpeg.deleteFile(audioFilename);
             } catch (e) { }
         }
     };
