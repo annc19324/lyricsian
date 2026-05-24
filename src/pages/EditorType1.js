@@ -661,21 +661,22 @@ const EditorType1 = () => {
             await ffmpeg.writeFile('video_clean.mp4', await fetchFile(videoBlob));
             await ffmpeg.writeFile(audioFilename, await fetchFile(config.audioUrl));
 
+            // Transcode to WAV first to ensure 100% sample-accurate seeking in FFmpeg
+            setExportStatus("Decoding audio for sample-accurate sync...");
+            await ffmpeg.exec(['-i', audioFilename, '-c:a', 'pcm_s16le', 'audio_decoded.wav']);
+
             const fadeIn = config.fadeIn || 0;
             const fadeOut = config.fadeOut || 0;
 
             const filters = [];
-            
-            // Use exact audio trimming via filter instead of inaccurate fast-seeking
-            filters.push(`atrim=start=${startTime}:duration=${totalDuration}`);
-            filters.push(`asetpts=PTS-STARTPTS`);
-
             if (fadeIn > 0) filters.push(`afade=t=in:st=0:d=${fadeIn}`);
             if (fadeOut > 0) filters.push(`afade=t=out:st=${totalDuration - fadeOut}:d=${fadeOut}`);
 
             const ffmpegArgs = [
                 '-i', 'video_clean.mp4',
-                '-i', audioFilename,
+                '-ss', startTime.toString(),
+                '-t', totalDuration.toString(),
+                '-i', 'audio_decoded.wav',
                 '-map', '0:v',
                 '-map', '1:a',
                 '-c:v', 'copy',
@@ -691,6 +692,7 @@ const EditorType1 = () => {
 
             ffmpegArgs.push('final_output.mp4');
 
+            setExportStatus("Merging Audio & Applying Fades...");
             await ffmpeg.exec(ffmpegArgs);
 
             setEncodingProgress(100);
@@ -717,6 +719,7 @@ const EditorType1 = () => {
             try {
                 await ffmpeg.deleteFile('video_clean.mp4');
                 await ffmpeg.deleteFile(audioFilename);
+                await ffmpeg.deleteFile('audio_decoded.wav');
                 await ffmpeg.deleteFile('final_output.mp4');
             } catch (e) { }
 
@@ -734,6 +737,7 @@ const EditorType1 = () => {
                 const ffmpeg = ffmpegRef.current;
                 await ffmpeg.deleteFile('video_clean.mp4');
                 await ffmpeg.deleteFile(audioFilename);
+                await ffmpeg.deleteFile('audio_decoded.wav');
             } catch (e) { }
         }
     };
