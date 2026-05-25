@@ -105,7 +105,8 @@ const EditorType1 = () => {
             if (parsed.audioUrl && parsed.audioUrl.startsWith('blob:')) parsed.audioUrl = defaultConfig.audioUrl;
             if (parsed.coverImage && parsed.coverImage.startsWith('blob:')) parsed.coverImage = defaultConfig.coverImage;
             if (parsed.mainImage && parsed.mainImage.startsWith('blob:')) parsed.mainImage = defaultConfig.mainImage;
-            return parsed;
+            // Merge with defaultConfig so newly added fields (like audioOffset) get their defaults
+            return { ...defaultConfig, ...parsed };
         }
         return defaultConfig;
     });
@@ -550,6 +551,7 @@ const EditorType1 = () => {
             // Audio Trim Logic
             const startTime = config.trimStart || 0;
             const audioOffset = config.audioOffset ?? 0;
+            console.log(`[Export] startTime=${startTime}, audioOffset=${audioOffset}, renderingTime shifts by +${audioOffset}s`);
             // If trimEnd is 0 or undefined, use full duration.
             // But better to use `duration` state if available.
             const fullDuration = duration || 300;
