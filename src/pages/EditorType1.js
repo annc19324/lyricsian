@@ -436,15 +436,21 @@ const EditorType1 = () => {
     const timelineRef = useRef(null);
     const playbackRafRef = useRef(null);
 
+    // Helper: tính adjustedTimings (giống export) để preview hiện đúng
+    const getAdjustedTimings = () => {
+        const offsetSec = (config.audioOffset || 0) / 1000;
+        if (offsetSec === 0) return null;
+        return timings.map(t => ({ ...t, time: Math.max(0, t.time - offsetSec) }));
+    };
+
     // Sync Playback Loop
     const tick = () => {
         if (!audioRef.current) return;
         const now = audioRef.current.currentTime;
-        // setCurrentTime(now); // Removed to prevent re-renders
 
-        // Drive Preview
+        // Drive Preview — dùng adjustedTimings để preview khớp với bản xuất
         if (previewRef.current) {
-            previewRef.current.renderFrame(now);
+            previewRef.current.renderFrame(now, getAdjustedTimings());
         }
 
         // Drive Timeline
@@ -466,9 +472,9 @@ const EditorType1 = () => {
             playbackRafRef.current = requestAnimationFrame(tick);
         } else {
             cancelAnimationFrame(playbackRafRef.current);
-            // Render static frame one last time to ensure sync on pause
+            // Render static frame (pause) — cũng dùng adjustedTimings
             if (audioRef.current && previewRef.current) {
-                previewRef.current.renderFrame(audioRef.current.currentTime);
+                previewRef.current.renderFrame(audioRef.current.currentTime, getAdjustedTimings());
             }
         }
         return () => cancelAnimationFrame(playbackRafRef.current);
