@@ -48,6 +48,7 @@ const defaultConfig = {
     trimEnd: 0,
     fadeIn: 0,
     fadeOut: 0,
+    audioOffset: 0,  // ms — dương = audio bắt đầu muộn hơn (lùi audio), âm = audio bắt đầu sớm hơn (kéo audio tới)
 
     // New Effects & Styling
     lyricsGlowSize: 0,      // Custom Glow Size
@@ -557,6 +558,16 @@ const EditorType1 = () => {
             const totalDuration = endTime - startTime;
             if (totalDuration <= 0) throw new Error("Invalid duration (End < Start)");
 
+            // audioOffset (ms): bù trừ độ lệch audio vs video.
+            // Dương → audio bắt đầu muộn hơn (thêm khoảng lặng trước audio, video chạy trước).
+            // Âm   → audio bắt đầu sớm hơn (cắt bỏ phần đầu audio thêm).
+            const audioOffsetSec = (config.audioOffset || 0) / 1000;
+
+            // Khi audioOffset > 0: video bắt đầu tại startTime, audio bắt đầu tại startTime + offsetSec
+            // (audio sẽ bị delay thêm offsetSec so với video)
+            // Khi audioOffset < 0: audio bắt đầu tại startTime - |offsetSec| (sớm hơn)
+            const audioStartTime = Math.max(0, startTime + audioOffsetSec);
+
             const fps = 30; // Stable FPS
             const totalFrames = Math.floor(totalDuration * fps);
             const { width, height } = config;
@@ -662,13 +673,16 @@ const EditorType1 = () => {
             await ffmpeg.writeFile('video_clean.mp4', await fetchFile(videoBlob));
             await ffmpeg.writeFile(audioFilename, await fetchFile(config.audioUrl));
 
-            // Decode ONLY the needed portion to WAV → avoids WASM OOM on long tracks
-            setExportStatus("Decoding audio segment for sample-accurate sync...");
+            // ACCURATE SEEK: Đặt -ss SAU -i để FFmpeg decode frame-by-frame tới đúng điểm.
+            // Chậm hơn fast seek (~1-2s extra) nhưng chính xác tới ms, tránh audio lệch.
+            setExportStatus("Decoding audio segment (accurate seek)...");
+            const audioDecodeBuffer = (totalDuration + 2).toFixed(3); // +2s buffer cho fade-out
             await ffmpeg.exec([
-                '-ss', startTime.toFixed(3),
-                '-t', (totalDuration + 1).toFixed(3), // +1s buffer for fade-out
                 '-i', audioFilename,
+                '-ss', audioStartTime.toFixed(3),   // ← accurate seek: sau -i
+                '-t', audioDecodeBuffer,
                 '-c:a', 'pcm_s16le',
+                '-ar', '44100',                     // cố định sample rate để tránh drift
                 'audio_decoded.wav'
             ]);
 
@@ -676,19 +690,27 @@ const EditorType1 = () => {
             const fadeOut = config.fadeOut || 0;
 
             const filters = [];
-            if (fadeIn > 0) filters.push(`afade=t=in:st=0:d=${fadeIn}`);
-            if (fadeOut > 0) filters.push(`afade=t=out:st=${totalDuration - fadeOut}:d=${fadeOut}`);
 
-            // Audio is already pre-trimmed → no -ss needed on audio input
+            // Nếu audioOffset dương: thêm khoảng lặng vào đầu audio bằng adelay
+            // để audio bắt đầu muộn hơn so với video
+            if (audioOffsetSec > 0) {
+                const delayMs = Math.round(audioOffsetSec * 1000);
+                filters.push(`adelay=${delayMs}|${delayMs}`);
+            }
+
+            if (fadeIn > 0) filters.push(`afade=t=in:st=0:d=${fadeIn}`);
+            if (fadeOut > 0) filters.push(`afade=t=out:st=${Math.max(0, totalDuration - fadeOut)}:d=${fadeOut}`);
+
+            // Merge: Video + Audio đã decode chính xác
             const ffmpegArgs = [
                 '-i', 'video_clean.mp4',
-                '-t', totalDuration.toString(),
                 '-i', 'audio_decoded.wav',
                 '-map', '0:v',
                 '-map', '1:a',
                 '-c:v', 'copy',
                 '-c:a', 'aac',
                 '-b:a', '192k',
+                '-t', totalDuration.toFixed(3),    // giới hạn độ dài chính xác
                 '-shortest',
                 '-movflags', '+faststart'
             ];

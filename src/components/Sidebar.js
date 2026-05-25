@@ -248,7 +248,40 @@ const Sidebar = React.memo(({ config, setConfig, lyricsRaw, setLyricsRaw, onRese
                       </div>
                     </div>
                   </div>
-                </>
+                  <div className="control-row" style={{ marginTop: '10px', background: 'rgba(255,165,0,0.08)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,165,0,0.2)' }}>
+                    <label style={{ color: '#ffa500', fontWeight: 'bold', marginBottom: '6px', display: 'block' }}>
+                      ⏱ Bù lệch Audio (ms)
+                    </label>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                      Nếu bản xuất bị <b>trễ</b> so với web → nhập số <b>âm</b> (vd: -200).<br/>
+                      Nếu bản xuất bị <b>nhanh</b> hơn web → nhập số <b>dương</b> (vd: +200).
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <input
+                        type="range" min="-2000" max="2000" step="10"
+                        value={config.audioOffset ?? 0}
+                        onChange={(e) => setConfig({ ...config, audioOffset: parseInt(e.target.value) })}
+                        style={{ flex: 1 }}
+                      />
+                      <input
+                        type="number" step="10"
+                        value={config.audioOffset ?? 0}
+                        onChange={(e) => setConfig({ ...config, audioOffset: e.target.value === '' ? 0 : parseInt(e.target.value) })}
+                        style={{ width: '70px', background: '#111', border: '1px solid #555', color: '#ffa500', textAlign: 'center', fontWeight: 'bold' }}
+                      />
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>ms</span>
+                    </div>
+                    {(config.audioOffset ?? 0) !== 0 && (
+                      <button
+                        className="btn"
+                        style={{ marginTop: '6px', fontSize: '0.7rem', padding: '3px 10px', color: '#ffa500', borderColor: '#ffa500' }}
+                        onClick={() => setConfig({ ...config, audioOffset: 0 })}
+                      >
+                        Reset về 0
+                      </button>
+                    )}
+                  </div>
+                  </>
               )}
 
             </div>
