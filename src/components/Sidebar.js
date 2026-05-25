@@ -248,6 +248,28 @@ const Sidebar = React.memo(({ config, setConfig, lyricsRaw, setLyricsRaw, onRese
                       </div>
                     </div>
                   </div>
+
+                  {/* Bù lệch Audio */}
+                  <div className="control-row" style={{ marginTop: '10px' }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>
+                      Bù lệch Audio xuất (ms) — mặc định -700
+                    </label>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <input
+                        type="range" min="-2000" max="500" step="10"
+                        value={config.audioOffset ?? -700}
+                        onChange={(e) => setConfig({ ...config, audioOffset: parseInt(e.target.value) })}
+                        style={{ flex: 1 }}
+                      />
+                      <input
+                        type="number" step="10"
+                        value={config.audioOffset ?? -700}
+                        onChange={(e) => setConfig({ ...config, audioOffset: e.target.value === '' ? -700 : parseInt(e.target.value) })}
+                        style={{ width: '65px', background: '#111', border: '1px solid #444', color: 'var(--primary-glow)', textAlign: 'center' }}
+                      />
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>ms</span>
+                    </div>
+                  </div>
                   </>
               )}
 

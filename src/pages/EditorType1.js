@@ -965,16 +965,13 @@ const EditorType1 = () => {
                 <audio
                     ref={audioRef}
                     src={config.audioUrl}
-                    crossOrigin="anonymous"
                     onTimeUpdate={handleTimeUpdate}
                     onLoadedMetadata={handleLoadedMetadata}
                     onEnded={() => { setIsPlaying(false); setIsRecording(false); }}
                     onError={(e) => {
-                        console.error("Audio Load Error:", e);
-                        console.log("Attempted URL:", config.audioUrl);
-                        alert("Could not load audio from: " + config.audioUrl + "\nCheck if file exists in public folder.");
+                        // Chỉ log lỗi, không alert — blob URL từ upload hợp lệ nhưng crossOrigin cũ gây false error
+                        console.warn("Audio load warning (may be transient):", config.audioUrl, e);
                     }}
-
                 />
             )}
         </div>
