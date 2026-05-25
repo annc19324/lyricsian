@@ -558,11 +558,16 @@ const EditorType1 = () => {
 
             const audioOffsetSec = (config.audioOffset || 0) / 1000;
 
-            // audioOffset dương (+): lyric ghi sớm hơn thực tế do recording latency.
-            //   → Advance render time khi xuất để lyric hiện sớm hơn → khớp audio.
-            //   → KHÔNG dùng adelay (sẽ gây silence ở đầu video).
-            // audioOffset âm (-): lyric ghi muộn hơn → lấy audio sớm hơn trong file.
-            const audioStartTime = Math.max(0, startTime + Math.min(0, audioOffsetSec));
+            // Shift timings để bù lech recording latency.
+            // Timing gốc = actual_pos + L (do recording latency L).
+            // adjustedTiming = actual_pos = timing - L = timing - audioOffsetSec.
+            // → Lyric xuất hiện đúng lúc audio phát, animation vẫn chạy đúng từ đầu.
+            const adjustedTimings = audioOffsetSec !== 0
+                ? timings.map(t => ({ ...t, time: Math.max(0, t.time - audioOffsetSec) }))
+                : null;
+
+            // Audio luôn bắt đầu từ startTime — không cần shift.
+            const audioStartTime = startTime;
 
             const fps = 30; // Stable FPS
             const totalFrames = Math.floor(totalDuration * fps);
@@ -602,14 +607,11 @@ const EditorType1 = () => {
 
                 const time = startTime + (i / fps);
 
-                // Với offset dương: advance renderTime để lyric hiện sớm hơn trong video.
-                // Ví dụ audioOffset=+1200ms: render frame như thể đang ở t+1.2s trong bài
-                // → lyric xuất hiện đúng lúc audio thực tế phát ra từ file.
-                const renderTime = audioOffsetSec > 0 ? time + audioOffsetSec : time;
-
                 // Drive Preview state (Frame-perfect)
+                // Pass adjustedTimings để lyric detection dùng timing đã bù offset,
+                // trong khi animation vẫn chạy trên time gốc (không skip visual).
                 if (previewRef.current) {
-                    previewRef.current.renderFrame(renderTime);
+                    previewRef.current.renderFrame(time, adjustedTimings);
                 }
 
                 // Update UI: 0-80% for rendering

@@ -160,28 +160,31 @@ const Preview = React.memo(forwardRef(({ config, lyrics, currentLineIndex, canva
 
     // Expose render method to parent
     useImperativeHandle(ref, () => ({
-        renderFrame: (time) => {
-            render(time);
+        renderFrame: (time, overrideTimings) => {
+            render(time, overrideTimings);
         },
         getPositions: () => positionsRef.current
     }));
 
-    const render = (inputTime) => {
+    const render = (inputTime, overrideTimings) => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d', { alpha: false });
         const { width, height, fontFamily, lyricSize, activeColor } = config;
 
         // 0. Resolve Time/Index
+        // effectiveTime: dùng cho animation (camera, particles, water...)
+        // lyricTimings: dùng để xác định lyric active (có thể được override khi export)
         let effectiveTime = inputTime;
+        const lyricTimings = overrideTimings || timings;
         let index = 0;
-        if (timings && timings.length > 0) {
-            const hasValidTimings = timings.some(t => t.time > 0.1);
+        if (lyricTimings && lyricTimings.length > 0) {
+            const hasValidTimings = lyricTimings.some(t => t.time > 0.1);
             if (hasValidTimings) {
                 let activeIndex = -1;
                 let maxTimeFound = -1;
-                for (let i = 0; i < timings.length; i++) {
-                    const t = timings[i];
+                for (let i = 0; i < lyricTimings.length; i++) {
+                    const t = lyricTimings[i];
                     if (t.time > 0.1 && effectiveTime >= t.time) {
                         if (t.time > maxTimeFound) {
                             maxTimeFound = t.time;
