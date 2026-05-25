@@ -666,9 +666,17 @@ const EditorType1 = () => {
             await ffmpeg.writeFile('video_clean.mp4', await fetchFile(videoBlob));
             await ffmpeg.writeFile(audioFilename, await fetchFile(config.audioUrl));
 
-            // Transcode to WAV first to ensure 100% sample-accurate seeking in FFmpeg
-            setExportStatus("Decoding audio for sample-accurate sync...");
-            await ffmpeg.exec(['-i', audioFilename, '-c:a', 'pcm_s16le', 'audio_decoded.wav']);
+            // Decode ONLY the needed portion to WAV → avoids WASM OOM on long tracks
+            // Apply audioOffset here so the WAV starts at the exact right sample
+            const audioStartTime = Math.max(0, startTime + audioOffset);
+            setExportStatus("Decoding audio segment for sample-accurate sync...");
+            await ffmpeg.exec([
+                '-ss', audioStartTime.toFixed(3),
+                '-t', (totalDuration + 1).toFixed(3), // +1s buffer for fade-out
+                '-i', audioFilename,
+                '-c:a', 'pcm_s16le',
+                'audio_decoded.wav'
+            ]);
 
             const fadeIn = config.fadeIn || 0;
             const fadeOut = config.fadeOut || 0;
@@ -677,9 +685,9 @@ const EditorType1 = () => {
             if (fadeIn > 0) filters.push(`afade=t=in:st=0:d=${fadeIn}`);
             if (fadeOut > 0) filters.push(`afade=t=out:st=${totalDuration - fadeOut}:d=${fadeOut}`);
 
+            // Audio is already trimmed+offset → no -ss needed on audio input
             const ffmpegArgs = [
                 '-i', 'video_clean.mp4',
-                '-ss', startTime.toFixed(3),
                 '-t', totalDuration.toString(),
                 '-i', 'audio_decoded.wav',
                 '-map', '0:v',
@@ -699,6 +707,7 @@ const EditorType1 = () => {
 
             setExportStatus("Merging Audio & Applying Fades...");
             await ffmpeg.exec(ffmpegArgs);
+
 
             setEncodingProgress(100);
 
