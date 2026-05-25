@@ -248,28 +248,9 @@ const Sidebar = React.memo(({ config, setConfig, lyricsRaw, setLyricsRaw, onRese
                       </div>
                     </div>
                   </div>
-                  <div className="control-row" style={{ marginTop: '10px' }}>
-                    <label style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Độ lệch âm thanh xuất (s) [Latency Offset]</label>
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '5px' }}>
-                      <input
-                        type="range" min="-1.5" max="1.5" step="0.05"
-                        value={config.audioOffset ?? 0}
-                        onChange={(e) => setConfig({ ...config, audioOffset: parseFloat(e.target.value) })}
-                        style={{ flex: 1 }}
-                      />
-                      <input
-                        type="number" step="0.05"
-                        value={config.audioOffset ?? 0}
-                        onChange={(e) => setConfig({ ...config, audioOffset: e.target.value === '' ? 0 : parseFloat(e.target.value) })}
-                        style={{ width: '65px', background: '#111', border: '1px solid #333', color: '#fff', textAlign: 'center' }}
-                      />
-                    </div>
-                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                      Bù trừ độ trễ trình duyệt khi xuất video. Gợi ý: {config.audioOffset > 0 ? `Nhạc nhanh hơn ${config.audioOffset}s` : config.audioOffset < 0 ? `Nhạc chậm hơn ${Math.abs(config.audioOffset)}s` : 'Khớp mặc định'}.
-                    </span>
-                  </div>
                 </>
               )}
+
             </div>
 
             <div className="panel-section">

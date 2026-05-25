@@ -48,7 +48,6 @@ const defaultConfig = {
     trimEnd: 0,
     fadeIn: 0,
     fadeOut: 0,
-    audioOffset: 0.3,
 
     // New Effects & Styling
     lyricsGlowSize: 0,      // Custom Glow Size
@@ -550,8 +549,6 @@ const EditorType1 = () => {
 
             // Audio Trim Logic
             const startTime = config.trimStart || 0;
-            const audioOffset = config.audioOffset ?? 0;
-            console.log(`[Export] startTime=${startTime}, audioOffset=${audioOffset}, renderingTime shifts by +${audioOffset}s`);
             // If trimEnd is 0 or undefined, use full duration.
             // But better to use `duration` state if available.
             const fullDuration = duration || 300;
@@ -597,11 +594,10 @@ const EditorType1 = () => {
                 if (isExportCancelledRef.current) throw new Error("Cancelled");
 
                 const time = startTime + (i / fps);
-                const renderingTime = time + audioOffset;
 
                 // Drive Preview state (Frame-perfect)
                 if (previewRef.current) {
-                    previewRef.current.renderFrame(renderingTime);
+                    previewRef.current.renderFrame(time);
                 }
 
                 // Update UI: 0-80% for rendering
@@ -667,11 +663,9 @@ const EditorType1 = () => {
             await ffmpeg.writeFile(audioFilename, await fetchFile(config.audioUrl));
 
             // Decode ONLY the needed portion to WAV → avoids WASM OOM on long tracks
-            // Apply audioOffset here so the WAV starts at the exact right sample
-            const audioStartTime = Math.max(0, startTime + audioOffset);
             setExportStatus("Decoding audio segment for sample-accurate sync...");
             await ffmpeg.exec([
-                '-ss', audioStartTime.toFixed(3),
+                '-ss', startTime.toFixed(3),
                 '-t', (totalDuration + 1).toFixed(3), // +1s buffer for fade-out
                 '-i', audioFilename,
                 '-c:a', 'pcm_s16le',
@@ -685,7 +679,7 @@ const EditorType1 = () => {
             if (fadeIn > 0) filters.push(`afade=t=in:st=0:d=${fadeIn}`);
             if (fadeOut > 0) filters.push(`afade=t=out:st=${totalDuration - fadeOut}:d=${fadeOut}`);
 
-            // Audio is already trimmed+offset → no -ss needed on audio input
+            // Audio is already pre-trimmed → no -ss needed on audio input
             const ffmpegArgs = [
                 '-i', 'video_clean.mp4',
                 '-t', totalDuration.toString(),
