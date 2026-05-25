@@ -48,7 +48,8 @@ const defaultConfig = {
     trimEnd: 0,
     fadeIn: 0,
     fadeOut: 0,
-    audioOffset: 0,  // ms — dương = audio bắt đầu muộn hơn (lùi audio), âm = audio bắt đầu sớm hơn (kéo audio tới)
+    audioOffset: 0,  // ms — dương = audio bắt đầu muộn hơn, âm = audio bắt đầu sớm hơn
+    recordingLatencyCompensation: true, // Tự động bù audio output latency khi ghi timing
 
     // New Effects & Styling
     lyricsGlowSize: 0,      // Custom Glow Size
@@ -190,6 +191,8 @@ const EditorType1 = () => {
     }, []);
 
     const audioRef = useRef(null);
+    const audioContextRef = useRef(null); // Dùng để đo output latency
+    const measuredLatencyRef = useRef(0);  // Latency đo được (giây)
     const mediaRecorderRef = useRef(null);
     const isExportCancelledRef = useRef(false);
 
@@ -416,10 +419,24 @@ const EditorType1 = () => {
     const toggleRecording = async () => {
         if (isRecording) {
             setIsRecording(false);
-            // Don't stop playing? User might want to just stop recording mode.
-            // But typically toggle off stops.
         } else {
             if (!config.audioUrl) return alert("Load audio first");
+
+            // Đo output latency lần đầu tiên khi bắt đầu ghi
+            if (!audioContextRef.current) {
+                try {
+                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    audioContextRef.current = ctx;
+                    // outputLatency = thời gian từ lúc gửi audio → loa phát ra
+                    // baseLatency = latency cố định của audio graph
+                    const latency = (ctx.outputLatency || 0) + (ctx.baseLatency || 0);
+                    measuredLatencyRef.current = latency;
+                    console.log(`[Lyricsian] Measured audio output latency: ${Math.round(latency * 1000)}ms`);
+                } catch (e) {
+                    console.warn("AudioContext not available, latency = 0", e);
+                    measuredLatencyRef.current = 0;
+                }
+            }
 
             try {
                 await audioRef.current.play();
@@ -483,12 +500,19 @@ const EditorType1 = () => {
     };
 
     const nextLyric = () => {
-        // ... (NextLyric Logic)
         if (isPlaying) {
             setIsRecording(true);
-            const now = audioRef.current ? audioRef.current.currentTime : 0;
+            const rawTime = audioRef.current ? audioRef.current.currentTime : 0;
+
+            // Bù audio output latency: currentTime chạy trước âm thanh bạn nghe.
+            // Khi bạn bấm Space lúc NGHE thấy lyric, decoder đã chạy trước ~latency giây rồi.
+            // → Trừ latency ra để lưu đúng vị trí âm thanh thực tế.
+            const latency = config.recordingLatencyCompensation !== false
+                ? measuredLatencyRef.current
+                : 0;
+            const now = Math.max(0, rawTime - latency);
+
             const newTimings = [...timings];
-            // Ensure structure exists
             if (!newTimings[currentLineIndex]) newTimings[currentLineIndex] = { index: currentLineIndex, time: 0 };
             newTimings[currentLineIndex].time = now;
             setTimings(newTimings);

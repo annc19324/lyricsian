@@ -250,11 +250,15 @@ const Sidebar = React.memo(({ config, setConfig, lyricsRaw, setLyricsRaw, onRese
                   </div>
                   <div className="control-row" style={{ marginTop: '10px', background: 'rgba(255,165,0,0.08)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,165,0,0.2)' }}>
                     <label style={{ color: '#ffa500', fontWeight: 'bold', marginBottom: '6px', display: 'block' }}>
-                      ⏱ Bù lệch Audio (ms)
+                      ⏱ Bù lệch Audio khi Xuất (ms)
                     </label>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
-                      Nếu bản xuất bị <b>trễ</b> so với web → nhập số <b>âm</b> (vd: -200).<br/>
-                      Nếu bản xuất bị <b>nhanh</b> hơn web → nhập số <b>dương</b> (vd: +200).
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: '1.5' }}>
+                      <b style={{ color: '#ffa500' }}>Nguyên nhân lệch:</b> Trình duyệt có audio output latency ~
+                      <b style={{ color: 'white' }}>100–700ms</b> (tùy hệ thống / driver).<br/>
+                      Khi ghi timing bạn bấm lúc <i>nghe thấy</i>, nhưng <code>currentTime</code> đã
+                      chạy trước → timing ghi sớm hơn thực tế.<br/>
+                      Video xuất (FFmpeg) không có latency → lyric hiện sớm hơn âm thanh.<br/>
+                      <span style={{ color: '#ffa500' }}>→ Nhập số âm để delay âm thanh xuất về sau khớp lyric.</span>
                     </div>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                       <input
@@ -271,15 +275,24 @@ const Sidebar = React.memo(({ config, setConfig, lyricsRaw, setLyricsRaw, onRese
                       />
                       <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>ms</span>
                     </div>
-                    {(config.audioOffset ?? 0) !== 0 && (
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'center' }}>
+                      {(config.audioOffset ?? 0) !== 0 && (
+                        <button
+                          className="btn"
+                          style={{ fontSize: '0.7rem', padding: '3px 10px', color: '#ffa500', borderColor: '#ffa500' }}
+                          onClick={() => setConfig({ ...config, audioOffset: 0 })}
+                        >
+                          Reset → 0
+                        </button>
+                      )}
                       <button
                         className="btn"
-                        style={{ marginTop: '6px', fontSize: '0.7rem', padding: '3px 10px', color: '#ffa500', borderColor: '#ffa500' }}
-                        onClick={() => setConfig({ ...config, audioOffset: 0 })}
+                        style={{ fontSize: '0.7rem', padding: '3px 10px', color: '#aaa', borderColor: '#555' }}
+                        onClick={() => setConfig({ ...config, audioOffset: -700 })}
                       >
-                        Reset về 0
+                        Dùng -700ms (mặc định)
                       </button>
-                    )}
+                    </div>
                   </div>
                   </>
               )}
