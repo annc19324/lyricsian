@@ -210,12 +210,15 @@ const EditorType1 = () => {
 
     // Auto-Sync Timings Logic: Smart Preservation
     useEffect(() => {
-        // 1. If lyrics structure hasn't changed (deep compare of text content only), do nothing
-        // We can check if length and content matches exact
-        // But we want to handle "Typo Fix" vs "Structure Change"
-
         if (lyrics.length === 0) return;
         if (lyrics === prevLyricsRef.current) return; // Same ref
+
+        // Guard: Initial mount — prevLyricsRef rỗng nhưng timings đã load từ localStorage.
+        // Không được reset timings, chỉ khởi tạo ref rồi return.
+        if (prevLyricsRef.current.length === 0) {
+            prevLyricsRef.current = lyrics;
+            return;
+        }
 
         setTimings(prev => {
             // A. Typo Fix Mode: If line count is EXACTLY same, assume 1-to-1 mapping to preserve times
@@ -553,15 +556,13 @@ const EditorType1 = () => {
             const totalDuration = endTime - startTime;
             if (totalDuration <= 0) throw new Error("Invalid duration (End < Start)");
 
-            // audioOffset (ms): bù trừ độ lệch audio vs video.
-            // Dương → audio bắt đầu muộn hơn (thêm khoảng lặng trước audio, video chạy trước).
-            // Âm   → audio bắt đầu sớm hơn (cắt bỏ phần đầu audio thêm).
             const audioOffsetSec = (config.audioOffset || 0) / 1000;
 
-            // Khi audioOffset > 0: video bắt đầu tại startTime, audio bắt đầu tại startTime + offsetSec
-            // (audio sẽ bị delay thêm offsetSec so với video)
-            // Khi audioOffset < 0: audio bắt đầu tại startTime - |offsetSec| (sớm hơn)
-            const audioStartTime = Math.max(0, startTime + audioOffsetSec);
+            // audioOffset dương (+): lyric ghi sớm hơn thực tế do recording latency.
+            //   → Advance render time khi xuất để lyric hiện sớm hơn → khớp audio.
+            //   → KHÔNG dùng adelay (sẽ gây silence ở đầu video).
+            // audioOffset âm (-): lyric ghi muộn hơn → lấy audio sớm hơn trong file.
+            const audioStartTime = Math.max(0, startTime + Math.min(0, audioOffsetSec));
 
             const fps = 30; // Stable FPS
             const totalFrames = Math.floor(totalDuration * fps);
@@ -601,9 +602,14 @@ const EditorType1 = () => {
 
                 const time = startTime + (i / fps);
 
+                // Với offset dương: advance renderTime để lyric hiện sớm hơn trong video.
+                // Ví dụ audioOffset=+1200ms: render frame như thể đang ở t+1.2s trong bài
+                // → lyric xuất hiện đúng lúc audio thực tế phát ra từ file.
+                const renderTime = audioOffsetSec > 0 ? time + audioOffsetSec : time;
+
                 // Drive Preview state (Frame-perfect)
                 if (previewRef.current) {
-                    previewRef.current.renderFrame(time);
+                    previewRef.current.renderFrame(renderTime);
                 }
 
                 // Update UI: 0-80% for rendering
@@ -685,14 +691,7 @@ const EditorType1 = () => {
             const fadeOut = config.fadeOut || 0;
 
             const filters = [];
-
-            // Nếu audioOffset dương: thêm khoảng lặng vào đầu audio bằng adelay
-            // để audio bắt đầu muộn hơn so với video
-            if (audioOffsetSec > 0) {
-                const delayMs = Math.round(audioOffsetSec * 1000);
-                filters.push(`adelay=${delayMs}|${delayMs}`);
-            }
-
+            // Không dùng adelay — offset đã được xử lý qua render time ở trên.
             if (fadeIn > 0) filters.push(`afade=t=in:st=0:d=${fadeIn}`);
             if (fadeOut > 0) filters.push(`afade=t=out:st=${Math.max(0, totalDuration - fadeOut)}:d=${fadeOut}`);
 
